@@ -175,10 +175,8 @@ export function useChatEnqueue({
         !!effectiveSessionId && isSessionRunOccupied(effectiveSessionId);
       const compose = sessionComposeStore.get(sid);
       const draining = compose.queueDraining;
-      const hasVisiblePending = compose.userQueue.some(
-        (i) => i.visibility !== "dispatching",
-      );
-      const showInQueue = occupied || draining || hasVisiblePending;
+      const hasAnyQueueItem = compose.userQueue.length > 0;
+      const showInQueue = occupied || draining || hasAnyQueueItem;
       const localItem = createUserQueueItem(messageText || "（见附件）", {
         skillId: skill?.id,
         skillPrompt,

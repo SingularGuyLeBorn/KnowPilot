@@ -79,7 +79,7 @@ export interface StreamLifecycleState {
 }
 
 /** done 相位等待 MessageStore 对齐的上限；超时强制 commit，避免发送队列永久占用 */
-export const DONE_COMMIT_TIMEOUT_MS = 8_000;
+export const DONE_COMMIT_TIMEOUT_MS = 1_500;
 
 const IDLE_STATE: StreamLifecycleState = {
   phase: "idle",
