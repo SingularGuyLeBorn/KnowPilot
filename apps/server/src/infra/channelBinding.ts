@@ -8,6 +8,7 @@ import type { AppConfig } from "./config.js";
 import type { ServiceContainer } from "./serviceContainer.js";
 import type { ImChannel } from "./messageGateway.js";
 import { DEFAULT_LLM_MODEL, TIER_DEFAULT_TOOLS } from "@knowpilot/shared";
+import { notifyAgentUi } from "./uiStateNotify.js";
 
 const DAILY_FRAGMENTS_SOURCE = "onebot-daily-fragments";
 const DAILY_FRAGMENTS_AGENT_NAME = "每日碎片整理员";
@@ -189,11 +190,25 @@ export async function resolveOrCreateChannelBinding(
     ? `IM · ${input.channel} · ${input.peerId.slice(0, 12)} · ${chatId.slice(0, 20)}`
     : `IM · ${input.channel} · ${input.peerId.slice(0, 12)}`;
   const model = resolved.model || config.llm.defaultModel || DEFAULT_LLM_MODEL;
+
+  // 为 IM 渠道追加纯文本格式约束：QQ 等 IM 不渲染 Markdown，用户可见才透明。
+  const agentRow = await prisma.agent.findUnique({
+    where: { id: resolved.id },
+    select: { systemPrompt: true },
+  });
+  const basePrompt = agentRow?.systemPrompt?.trim() || "你是 OasisMind 助手。";
+  const channelLabel = input.channel === "onebot" ? "QQ" : input.channel;
+  const imFormatRule =
+    `\n\n## 当前渠道格式约束\n` +
+    `当前通过 ${channelLabel} / IM 渠道回复用户。请使用纯文本，不要使用 Markdown 语法（如 ** 加粗、- 列表、## 标题、[文本](链接) 链接标记、\`代码\` 等）。公式也尽量用普通文字描述，保持简洁自然。`;
+  const sessionSystemPrompt = `${basePrompt}${imFormatRule}`;
+
   const dedicated = await prisma.chatSession.create({
     data: {
       title,
       autoName: title,
       model,
+      systemPrompt: sessionSystemPrompt,
       agentId: resolved.id,
       isMainSession: false,
       status: "active",
@@ -212,6 +227,8 @@ export async function resolveOrCreateChannelBinding(
       lastMessageAt: new Date(),
     },
   });
+  // 新 IM session 首次创建，推侧栏刷新让 web 实时可见
+  await notifyAgentUi(prisma, resolved.id, { type: "session_list_changed" });
   return { ...created, chatId: created.chatId || null } as ChannelBindingRow;
 }
 

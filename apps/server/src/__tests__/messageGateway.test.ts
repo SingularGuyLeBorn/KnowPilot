@@ -11,10 +11,10 @@ import { wrapEmitForChannelReply } from "../infra/channelStreamBridge.js";
 
 describe("channelStreamBridge", () => {
   it("token 节流 + done 终稿", async () => {
-    const chunks: Array<{ text: string; finish: boolean }> = [];
+    const chunks: Array<{ text: string; finish: boolean; reasoning?: string }> = [];
     const emit = vi.fn();
     const wrapped = wrapEmitForChannelReply(emit, (c) => {
-      chunks.push({ text: c.text, finish: c.finish });
+      chunks.push({ text: c.text, finish: c.finish, reasoning: c.reasoning });
     });
     wrapped({ type: "token", delta: "你" });
     wrapped({ type: "token", delta: "好" });
@@ -29,7 +29,33 @@ describe("channelStreamBridge", () => {
       roundsUsed: 1,
     });
     expect(emit).toHaveBeenCalled();
-    expect(chunks.at(-1)).toEqual({ text: "你好", finish: true });
+    expect(chunks.at(-1)).toEqual({ text: "你好", finish: true, reasoning: undefined });
+  });
+
+  it("thinking 事件被收集并在 finish 时带回 reasoning", async () => {
+    const chunks: Array<{ text: string; finish: boolean; reasoning?: string }> = [];
+    const emit = vi.fn();
+    const wrapped = wrapEmitForChannelReply(emit, (c) => {
+      chunks.push({ text: c.text, finish: c.finish, reasoning: c.reasoning });
+    });
+    wrapped({ type: "thinking", delta: "先分析" });
+    wrapped({ type: "thinking", delta: "，再回答" });
+    wrapped({ type: "token", delta: "答案" });
+    wrapped({
+      type: "done",
+      sessionId: "s1",
+      agentId: "a1",
+      content: "答案",
+      toolCalls: [],
+      model: "m",
+      provider: "p",
+      roundsUsed: 1,
+    });
+    expect(chunks.at(-1)).toEqual({
+      text: "答案",
+      finish: true,
+      reasoning: "先分析，再回答",
+    });
   });
 });
 

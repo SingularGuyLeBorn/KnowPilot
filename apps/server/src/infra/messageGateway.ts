@@ -15,6 +15,7 @@ import { resolveOrCreateChannelBinding } from "./channelBinding.js";
 import { getStreamHub } from "./sessionStreamHub.js";
 import { createTrpcInvoker } from "./trpcInvoker.js";
 import { wrapEmitForChannelReply } from "./channelStreamBridge.js";
+import { notifyAgentUi } from "./uiStateNotify.js";
 
 export type ImChannel = "qq" | "feishu" | "telegram" | "onebot";
 
@@ -44,6 +45,8 @@ export type ChannelReplyChunk = {
   /** 流式是否结束 */
   finish: boolean;
   streamId?: string;
+  /** 模型的 reasoning/thinking 内容；IM 渠道可额外转发给用户 */
+  reasoning?: string;
 };
 
 export interface ChannelAdapter {
@@ -122,6 +125,9 @@ export async function handleIncomingMessage(msg: UnifiedMessage): Promise<Gatewa
     text = topicLabel || "我们开始一个新话题。";
   }
 
+  // 检测「清空上下文」指令：/clear 或 /重置
+  const clearMatch = text.match(/^\/(?:clear|重置|清空|reset)\s*$/i);
+
   stats.received += 1;
   const eventId = `${msg.envelope.channel}:${msg.meta.eventId}`;
   const claim = await claimWebhookEvent(deps.prisma, eventId, `im:${msg.envelope.channel}`, "im_chat");
@@ -138,11 +144,28 @@ export async function handleIncomingMessage(msg: UnifiedMessage): Promise<Gatewa
       forceChatId,
     });
 
+    // 清空当前 IM session 上下文
+    if (clearMatch) {
+      await deps.prisma.chatMessage.deleteMany({ where: { sessionId: binding.sessionId } });
+      // 推拉铁律：session 内容变化后推列表变更，让 web 侧栏/打开的标签页实时刷新
+      await notifyAgentUi(deps.prisma, binding.agentId, { type: "session_list_changed" });
+      const adapter = adapters.get(msg.envelope.channel);
+      if (adapter) {
+        await adapter.reply(msg, { text: "已清空当前会话上下文，继续聊吧。", finish: true }).catch(() => {});
+      }
+      return { ok: true, sessionId: binding.sessionId };
+    }
+
     const hub = getStreamHub();
     if (!hub) {
       stats.failed += 1;
       return { ok: false, error: "SessionStreamHub 未就绪" };
     }
+
+    const session = await deps.prisma.chatSession.findUnique({
+      where: { id: binding.sessionId },
+      select: { systemPrompt: true },
+    });
 
     const body = {
       sessionId: binding.sessionId,
@@ -150,6 +173,7 @@ export async function handleIncomingMessage(msg: UnifiedMessage): Promise<Gatewa
       message: text,
       source: "user" as const,
       clientMessageId: eventId,
+      config: session?.systemPrompt ? { systemPrompt: session.systemPrompt } : undefined,
     };
 
     const invoke = createTrpcInvoker({

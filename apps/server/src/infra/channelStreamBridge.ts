@@ -16,6 +16,7 @@ export function wrapEmitForChannelReply(
   onChunk: (chunk: ChannelReplyChunk) => void | Promise<void>,
 ): (event: AgentStreamEvent) => void {
   let buf = "";
+  let reasoningBuf = "";
   const streamId = randomUUID().replace(/-/g, "").slice(0, 24);
   let lastFlush = 0;
   let finished = false;
@@ -24,7 +25,9 @@ export function wrapEmitForChannelReply(
     if (finished && finish) return;
     if (finish) finished = true;
     lastFlush = Date.now();
-    void Promise.resolve(onChunk({ text: buf, finish, streamId })).catch((err) => { console.warn("[channelStreamBridge.ts] best-effort failed:", err instanceof Error ? err.message : err); });
+    void Promise.resolve(
+      onChunk({ text: buf, finish, streamId, reasoning: reasoningBuf || undefined }),
+    ).catch((err) => { console.warn("[channelStreamBridge.ts] best-effort failed:", err instanceof Error ? err.message : err); });
   };
 
   return (event: AgentStreamEvent) => {
@@ -33,6 +36,8 @@ export function wrapEmitForChannelReply(
       buf += event.delta;
       const now = Date.now();
       if (now - lastFlush >= FLUSH_MS) flush(false);
+    } else if (event.type === "thinking" && event.delta) {
+      reasoningBuf += event.delta;
     } else if (event.type === "done") {
       flush(true);
     } else if (event.type === "error") {

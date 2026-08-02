@@ -376,7 +376,9 @@ export function createOneBotAdapter(cfg: OneBotConfig): ChannelAdapter {
       state = "disconnected";
     },
     reply: async (msg, chunk: ChannelReplyChunk) => {
-      if (!chunk.finish && chunk.text.length < 80) return; // 避免分片过多刷屏
+      // 只发送最终完整回复；QQ 不适合流式分片刷屏，中间 chunk 全部忽略。
+      if (!chunk.finish) return;
+
       const ctx = replyCtx.get(msg.meta.eventId) ?? {
         userId: msg.envelope.peerId,
         groupId: msg.envelope.chatId,
@@ -384,7 +386,42 @@ export function createOneBotAdapter(cfg: OneBotConfig): ChannelAdapter {
         msgId: msg.meta.eventId,
       };
 
-      const content = chunk.text.slice(0, 4000) || "（空回复）";
+      const mdToPlain = (s: string): string => {
+        return (
+          s
+            // 标题
+            .replace(/^#{1,6}\s+/gm, "")
+            // 粗体/斜体
+            .replace(/(\*\*|__)(.+?)\1/g, "$2")
+            .replace(/(\*|_)(.+?)\1/g, "$2")
+            // 行内代码：保留内容，去掉反引号
+            .replace(/`([^`]+)`/g, "$1")
+            // 链接 [文本](url) → 文本 (url)
+            .replace(/\[([^\]]+)\]\(([^)]+)\)/g, "$1 ($2)")
+            // 无序列表
+            .replace(/^\s*[-*+]\s+/gm, "")
+            // 有序列表 1. / 2)
+            .replace(/^\s*\d+[.)]\s+/gm, "")
+            // 块引用
+            .replace(/^\s*>\s+/gm, "")
+            // 分隔线
+            .replace(/^\s*-{3,}\s*$/gm, "---")
+        );
+      };
+
+      const reasoning = chunk.reasoning?.trim();
+      const plainReasoning = reasoning ? mdToPlain(reasoning) : "";
+      const plainAnswer = mdToPlain(chunk.text) || "（空回复）";
+
+      // 预算：总长度上限 5000，thinking 最多 1500，剩余给正文
+      const MAX_TOTAL = 5000;
+      const MAX_REASONING = 1500;
+      const reasoningPart = plainReasoning.slice(0, MAX_REASONING);
+      const answerBudget = MAX_TOTAL - (reasoningPart ? reasoningPart.length + 25 : 0);
+      const answerPart = plainAnswer.slice(0, Math.max(100, answerBudget));
+      const content = reasoningPart
+        ? `<thinking>\n${reasoningPart}\n</thinking>\n\n${answerPart}`
+        : answerPart;
 
       if (ctx.isGroup && ctx.groupId) {
         await sendOneBotApi("/send_group_msg", {
@@ -407,7 +444,7 @@ export function createOneBotAdapter(cfg: OneBotConfig): ChannelAdapter {
         });
       }
 
-      if (chunk.finish) replyCtx.delete(msg.meta.eventId);
+      replyCtx.delete(msg.meta.eventId);
     },
     ingestWebhookPayload,
     sendOneBotApi,
