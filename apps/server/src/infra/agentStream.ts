@@ -311,6 +311,13 @@ function writeSse(res: Response, event: AgentStreamEvent, eventId?: number) {
 // >100 条历史时主流程会截断更早消息（LLM 上下文丢失早期轮次）。统一为 200。
 const HISTORY_PAGE_SIZE = 200;
 
+/** 解析并校验客户端 resumeAfter；非法值按 0（全量重放）处理 */
+export function resolveResumeAfter(raw: unknown): number {
+  const n = Number(raw ?? 0);
+  if (!Number.isFinite(n) || n < 0 || n > Number.MAX_SAFE_INTEGER) return 0;
+  return n;
+}
+
 interface LlmCallOptions {
   temperature?: number;
   maxTokens?: number;
@@ -1287,7 +1294,7 @@ export function handleAgentChatStream(
     const isPost = req.method === "POST";
     const body = (req.body ?? {}) as AgentChatInput & { resumeAfter?: number };
     const requestSessionId = body.sessionId || String(req.query.sessionId || "");
-    const afterEventId = Number(body.resumeAfter ?? req.query.resumeAfter ?? 0);
+    const afterEventId = resolveResumeAfter(body.resumeAfter ?? req.query.resumeAfter ?? 0);
     // POST 无 sessionId：每请求唯一占位键（clientMessageId 或预生成 id），杜绝共享 ""
     let runSessionId =
       requestSessionId ||
