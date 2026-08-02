@@ -43,6 +43,7 @@ import { isAuthEnabled, verifyAuthHeader, assertPublicUrlAuthSafe } from "./infr
 import { globalRateLimiter, chatStreamRateLimiter } from "./infra/rateLimit.js";
 import { traceMiddleware, formatTrace } from "./infra/trace.js";
 import { prisma } from "./db.js";
+import { bootstrapMessageChannels, stopAllChannelAdapters } from "./infra/channels/index.js";
 import { hydrateLlmBudget } from "./infra/llmBudget.js";
 import { notifyPostListChanged } from "./infra/uiStateNotify.js";
 
@@ -765,6 +766,11 @@ const server = app.listen(PORT, HOST, () => {
   } catch (err) {
     console.warn("  ⚠️ [OCR] 状态探测失败:", err instanceof Error ? err.message : err);
   }
+
+  // 初始化 IM 消息网关与适配器 (QQ / 飞书 / OneBot)
+  bootstrapMessageChannels({ prisma, services: serviceContainer, config })
+    .then(() => console.log("  💬 [MessageChannels] IM 消息网关与 Adapter 已成功挂载"))
+    .catch((err) => console.warn("  ⚠️ [MessageChannels] 初始化失败:", err));
 });
 
 // 优雅退出处理
