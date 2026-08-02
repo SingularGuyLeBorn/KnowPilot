@@ -134,7 +134,9 @@ export function useChatQueueDrain({
         if (!streamMessagePreview.trim() && !task.attachments?.length) {
           // 空内容禁止起流（否则 LLM「像没接到」）——丢弃：tombstone + finalize
           sessionComposeActions.claimUserQueueItem(sid, task);
+          detachUserQueueItemLocal(sid, task);
           if (task.dbId) {
+            sessionComposeActions.markQueueDbIdConsumed(sid, task.dbId);
             utils.agent.listSessionQueueItems.setData({ sessionId: sid }, (old) =>
               Array.isArray(old) ? old.filter((i) => i.id !== task.dbId) : old,
             );
@@ -148,7 +150,6 @@ export function useChatQueueDrain({
             }
           }
           sessionComposeActions.setQueueDraining(sid, false);
-          consumeRef.current(sid);
           return;
         }
 
@@ -157,8 +158,10 @@ export function useChatQueueDrain({
           try {
             const claim = await consumeSessionQueueItemMutation.mutateAsync({ id: task.dbId });
             if (!claim.claimed) {
+              // 已经被服务端或其他端认领：移除本地队列项，防无限死循环重发
+              detachUserQueueItemLocal(sid, task);
+              sessionComposeActions.markQueueDbIdConsumed(sid, task.dbId);
               sessionComposeActions.setQueueDraining(sid, false);
-              consumeRef.current(sid);
               return;
             }
             softClaimedDbId = task.dbId;
@@ -166,6 +169,7 @@ export function useChatQueueDrain({
               Array.isArray(old) ? old.filter((i) => i.id !== task.dbId) : old,
             );
           } catch {
+            detachUserQueueItemLocal(sid, task);
             sessionComposeActions.setQueueDraining(sid, false);
             return;
           }

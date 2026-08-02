@@ -68,6 +68,21 @@ function listeningPidOnPort(netstatStdout, port) {
     .map((parts) => parts[parts.length - 1])[0];
 }
 
+async function getProcessCommandLine(pid) {
+  try {
+    const { stdout } = await execAsync(`wmic process where "ProcessId=${pid}" get CommandLine /format:csv`);
+    if (stdout.trim()) return stdout;
+  } catch {
+    /* fallback to powershell */
+  }
+  try {
+    const { stdout } = await execAsync(`powershell -NoProfile -Command "(Get-CimInstance Win32_Process -Filter 'ProcessId=${pid}').CommandLine"`);
+    return stdout || "";
+  } catch {
+    return "";
+  }
+}
+
 /** 清理遗留的 KnowPilot server（占用 3010 会导致 health 误判旧进程、新 tsx watch 起不来） */
 async function killOrphanServer(serverPort = 3010) {
   if (process.platform !== "win32") {
@@ -91,9 +106,7 @@ async function killOrphanServer(serverPort = 3010) {
     const listeningPid = listeningPidOnPort(stdout, serverPort);
     if (!listeningPid) return;
 
-    const { stdout: cmdStdout } = await execAsync(
-      `wmic process where "ProcessId=${listeningPid}" get CommandLine /format:csv`,
-    );
+    const cmdStdout = await getProcessCommandLine(listeningPid);
     const isKnowPilotServer =
       (cmdStdout.includes("tsx") || cmdStdout.includes("index.ts")) &&
       (cmdStdout.includes(root) || cmdStdout.includes("KnowPilot") || cmdStdout.includes("apps\\server") || cmdStdout.includes("apps/server"));
@@ -116,9 +129,7 @@ async function killOrphanNextDev(webPort = 3000) {
     if (!listeningPid) return;
 
     // 仅清理确认为本项目的 Next.js dev server
-    const { stdout: cmdStdout } = await execAsync(
-      `wmic process where "ProcessId=${listeningPid}" get CommandLine /format:csv`,
-    );
+    const cmdStdout = await getProcessCommandLine(listeningPid);
     if (!cmdStdout.includes("next") || !cmdStdout.includes(root)) return;
 
     console.log(`\n  ⚠️  检测到遗留 Next.js dev 进程 PID ${listeningPid}，正在清理…`);
