@@ -1,15 +1,25 @@
 import { spawn } from "child_process";
 import path from "path";
+import fs from "fs";
 
-const exePath = path.resolve("tools/napcat/bootmain/NapCatWinBootMain.exe");
-console.log("🚀 正在为您启动 NapCatQQ 程序:", exePath);
+const qqDir = "D:\\Program Files\\Tencent\\QQNT";
+const exePath = path.join(qqDir, "NapCatWinBootMain.exe");
+
+if (!fs.existsSync(exePath)) {
+  const srcHook = path.resolve("tools/napcat/bootmain/NapCatWinBootHook.dll");
+  const srcMain = path.resolve("tools/napcat/bootmain/NapCatWinBootMain.exe");
+  fs.copyFileSync(srcHook, path.join(qqDir, "NapCatWinBootHook.dll"));
+  fs.copyFileSync(srcMain, exePath);
+}
+
+console.log("🚀 启动 NapCatQQ 注入引擎...");
+console.log("工作目录:", qqDir);
 
 const child = spawn(exePath, [], {
-  cwd: path.resolve("tools/napcat/bootmain"),
+  cwd: qqDir,
   stdio: "inherit",
-  detached: false,
+  detached: true,
 });
 
-child.on("error", (err) => {
-  console.error("启动 NapCat 失败:", err);
-});
+child.unref();
+console.log("✅ NapCatQQ 已成功唤起！");
