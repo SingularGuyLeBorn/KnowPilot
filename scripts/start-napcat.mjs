@@ -205,6 +205,7 @@ async function pollSelfId(timeoutMs = QQ_LOGIN_TIMEOUT_MS) {
   if (!QQ_ACCOUNT) return { ok: true, selfId: null };
   const start = Date.now();
   let lastNotify = 0;
+  let lastSelfId = null;
   console.log(`🔍 校验 NapCat 登录账号是否为目标 ${QQ_ACCOUNT}…`);
   console.log(`⏳ 已打开 QQ 登录窗口，请登录 ${QQ_ACCOUNT}；脚本将等待 ${timeoutMs / 1000}s 检测登录态…`);
   while (Date.now() - start < timeoutMs) {
@@ -214,8 +215,14 @@ async function pollSelfId(timeoutMs = QQ_LOGIN_TIMEOUT_MS) {
         console.log(`✅ 登录态检测成功：当前登录账号 ${info.selfId}`);
         return { ok: true, selfId: info.selfId };
       }
-      console.error(`❌ 账号不匹配：当前登录为 ${info.selfId}，但配置要求 ${QQ_ACCOUNT}。`);
-      return { ok: false, selfId: info.selfId };
+      if (info.selfId !== lastSelfId) {
+        console.log(
+          `⚠️  检测到非目标账号 ${info.selfId}，继续等待目标 ${QQ_ACCOUNT} 登录…` +
+            "（若长时间未变，请检查 NapCat 是否注入到新 QQ 窗口）",
+        );
+        lastSelfId = info.selfId;
+        lastNotify = Date.now() - start;
+      }
     }
     const elapsed = Date.now() - start;
     if (elapsed - lastNotify >= 10000) {
@@ -224,8 +231,15 @@ async function pollSelfId(timeoutMs = QQ_LOGIN_TIMEOUT_MS) {
     }
     await sleep(1500);
   }
-  console.error(`❌ 登录超时：在 ${timeoutMs / 1000}s 内未检测到 NapCat /get_login_info 返回；请检查 QQ 是否已登录。`);
-  return { ok: false, selfId: null };
+  if (lastSelfId) {
+    console.error(
+      `❌ 登录超时：在 ${timeoutMs / 1000}s 内未检测到目标账号 ${QQ_ACCOUNT}；` +
+        `最后检测到账号 ${lastSelfId}。请检查 NapCat 是否注入到新 QQ 窗口。`,
+    );
+  } else {
+    console.error(`❌ 登录超时：在 ${timeoutMs / 1000}s 内未检测到 NapCat /get_login_info 返回；请检查 QQ 是否已登录。`);
+  }
+  return { ok: false, selfId: lastSelfId };
 }
 
 async function main() {

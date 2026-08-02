@@ -10,6 +10,7 @@
 
 import { spawn, exec } from "child_process";
 import fs from "fs";
+import net from "net";
 import path from "path";
 import { fileURLToPath } from "url";
 import { promisify } from "util";
@@ -119,6 +120,78 @@ async function getProcessCommandLine(pid) {
   } catch {
     return "";
   }
+}
+
+/** 探测 OneBot /get_login_info 返回的当前登录 QQ */
+async function fetchOneBotSelfId(url, timeoutMs = 3000) {
+  try {
+    const res = await fetch(`${url.replace(/\/$/, "")}/get_login_info`, { signal: AbortSignal.timeout(timeoutMs) });
+    if (!res.ok) return null;
+    const data = await res.json();
+    const selfId = String(data.data?.user_id ?? data.data?.self_id ?? "");
+    return selfId || null;
+  } catch {
+    return null;
+  }
+}
+
+/** 用 Node  net 快速探测端口是否可被监听（占用 / 权限问题 均视为不可用） */
+function isTcpPortFree(port) {
+  return new Promise((resolve) => {
+    const server = net.createServer();
+    server.once("error", () => resolve(false));
+    server.once("listening", () => {
+      server.close(() => resolve(true));
+    });
+    server.listen(port, "127.0.0.1");
+  });
+}
+
+/**
+ * 为 NapCat 新实例解析可用的 OneBot HTTP URL。
+ *  - 若当前 ONEBOT_HTTP_URL 上已是目标账号，则无需启动新实例。
+ *  - 若该端口已被占用（或返回非目标账号），自动向后寻找 3001~3099 的空闲端口。
+ */
+async function resolveOneBotHttpUrl(targetAccount) {
+  const configuredUrl = (process.env.ONEBOT_HTTP_URL || "http://127.0.0.1:3001").trim();
+  let urlObj;
+  try {
+    urlObj = new URL(configuredUrl);
+  } catch {
+    console.log(`  ⚠️  ONEBOT_HTTP_URL 格式非法（${configuredUrl}），回退到 127.0.0.1:3001`);
+    urlObj = new URL("http://127.0.0.1:3001");
+  }
+  const isLocal = urlObj.hostname === "127.0.0.1" || urlObj.hostname === "localhost";
+
+  const existingSelfId = await fetchOneBotSelfId(configuredUrl, 3000);
+  if (existingSelfId === targetAccount) {
+    console.log(`  ✅ 目标 QQ ${targetAccount} 已在 ${configuredUrl} 在线，无需多开`);
+    return { url: configuredUrl, alreadyOnline: true };
+  }
+
+  if (!isLocal) {
+    console.log(`  ℹ️  ONEBOT_HTTP_URL 为非本地地址 ${configuredUrl}，跳过本地端口分配`);
+    return { url: configuredUrl, alreadyOnline: false };
+  }
+
+  const configuredPort = Number(urlObj.port) || 3001;
+  let startPort = configuredPort;
+  if (existingSelfId) {
+    console.log(`  ⚠️  ${configuredUrl} 已被 QQ ${existingSelfId} 占用，将为新实例分配端口`);
+    startPort = configuredPort + 1;
+  } else if (!(await isTcpPortFree(configuredPort))) {
+    console.log(`  ⚠️  ${configuredUrl} 端口被占用，将为新实例分配端口`);
+    startPort = configuredPort + 1;
+  }
+
+  for (let port = startPort; port < 3100; port++) {
+    if (await isTcpPortFree(port)) {
+      const url = `http://127.0.0.1:${port}`;
+      console.log(`  ✅ 为新 NapCat 实例分配 OneBot HTTP 端口 ${port}`);
+      return { url, alreadyOnline: false };
+    }
+  }
+  throw new Error("未找到空闲的 OneBot HTTP 端口（3001-3099）");
 }
 
 /** 清理遗留的 KnowPilot server（占用 3010 会导致 health 误判旧进程、新 tsx watch 起不来） */
@@ -294,7 +367,13 @@ async function main() {
 
   // 若配置了 OneBot 指定 QQ 账号，启动项目时自动拉起 NapCat/QQ（不阻塞 server）
   if (process.env.ONEBOT_QQ_ACCOUNT && process.env.ONEBOT_ENABLED !== "false") {
-    spawnService("napcat", ["napcat"], { fatal: false, restart: false });
+    const { url, alreadyOnline } = await resolveOneBotHttpUrl(process.env.ONEBOT_QQ_ACCOUNT);
+    process.env.ONEBOT_HTTP_URL = url;
+    if (!alreadyOnline) {
+      spawnService("napcat", ["napcat"], { fatal: false, restart: false });
+    } else {
+      console.log(`  ℹ️  目标 QQ 已在线，跳过 NapCat 启动`);
+    }
   }
 
   // server 意外退出（如未捕获异常/历史 Tesseract Worker 崩进程）自动拉起，不拖死整栈；
