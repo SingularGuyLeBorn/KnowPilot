@@ -300,6 +300,21 @@ export function useChatQueueDrain({
         // 若起流成功，isSessionRunOccupied(sid) 会在流结束前挡住新并发；
         // 若流结束，isSessionRunOccupied 变 false，这里锁释放后才能继续 drain 下一项。
         sessionComposeActions.setQueueDraining(sid, false);
+        // INV-8 ② 竞态兜底：onStreamCommitted 可能在 runStream promise resolve 之前触发，
+        // 此时 queueDraining 仍为 true，drainAllPendingQueues 会跳过。
+        // 释放锁后若 session 已 idle 且队列仍有可发项，必须再次触发 drain，否则待发消息永久卡住。
+        // 这是「释放锁后检查工作」的标准模式，与 onStreamCommitted 双保险，非时序猜测补丁。
+        const composeAfter = sessionComposeStore.get(sid);
+        if (
+          !isSessionRunOccupied(sid) &&
+          composeAfter.userQueue.some(
+            (t) =>
+              (t.kind === "user" || t.kind === "child_notify") &&
+              (t.text.trim() || t.attachments?.length),
+          )
+        ) {
+          consumeRef.current(sid);
+        }
       }
     })().catch(logQueryCatch);
   }, [runStream, asyncResultQueue, effectiveSessionId, isSessionRunOccupied, consumeSessionQueueItemMutation, finalizeSessionQueueItemMutation, unclaimSessionQueueItemMutation, ackAsyncDeliveryMutation, utils, asyncQueueQuery, sessionsItems, consumeRef]);
