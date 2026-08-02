@@ -26,17 +26,36 @@ _MODEL_BASE = os.environ.get("PPOCR_HOME") or os.path.join(_project_root, "weigh
 
 
 def get_model_paths(lang="ch"):
-    """返回 PaddleOCR 各模型目录路径"""
+    """返回 PaddleOCR 各模型目录路径；优先 server 版（尺寸更大、更准），回退 mobile 版。"""
+    force_server = os.environ.get("PPOCR_FORCE_SERVER", "1") != "0"
     if lang in ("ch", "cht"):
-        return {
+        server = {
+            "det": os.path.join(_MODEL_BASE, "whl", "det", "ch", "ch_PP-OCRv4_det_server_infer"),
+            "rec": os.path.join(_MODEL_BASE, "whl", "rec", "ch", "ch_PP-OCRv4_rec_server_infer"),
+            "cls": os.path.join(_MODEL_BASE, "whl", "cls", "ch_ppocr_server_v2.0_cls_infer"),
+        }
+        mobile = {
             "det": os.path.join(_MODEL_BASE, "whl", "det", "ch", "ch_PP-OCRv4_det_infer"),
             "rec": os.path.join(_MODEL_BASE, "whl", "rec", "ch", "ch_PP-OCRv4_rec_infer"),
             "cls": os.path.join(_MODEL_BASE, "whl", "cls", "ch_ppocr_mobile_v2.0_cls_infer"),
         }
+    else:
+        server = {
+            "det": os.path.join(_MODEL_BASE, "whl", "det", "en", "en_PP-OCRv3_det_server_infer"),
+            "rec": os.path.join(_MODEL_BASE, "whl", "rec", "en", "en_PP-OCRv4_rec_server_infer"),
+            "cls": os.path.join(_MODEL_BASE, "whl", "cls", "ch_ppocr_server_v2.0_cls_infer"),
+        }
+        mobile = {
+            "det": os.path.join(_MODEL_BASE, "whl", "det", "en", "en_PP-OCRv3_det_infer"),
+            "rec": os.path.join(_MODEL_BASE, "whl", "rec", "en", "en_PP-OCRv4_rec_infer"),
+            "cls": os.path.join(_MODEL_BASE, "whl", "cls", "ch_ppocr_mobile_v2.0_cls_infer"),
+        }
+    if not force_server:
+        return mobile
+    # server 模型存在则优先使用；否则回退 mobile（避免模型未下载就报错）
     return {
-        "det": os.path.join(_MODEL_BASE, "whl", "det", "en", "en_PP-OCRv3_det_infer"),
-        "rec": os.path.join(_MODEL_BASE, "whl", "rec", "en", "en_PP-OCRv4_rec_infer"),
-        "cls": os.path.join(_MODEL_BASE, "whl", "cls", "ch_ppocr_mobile_v2.0_cls_infer"),
+        k: server[k] if _model_ready(server[k]) else mobile[k]
+        for k in server
     }
 
 
