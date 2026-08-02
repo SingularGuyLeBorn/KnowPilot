@@ -11,8 +11,8 @@ console.log("🚀 正在启动 NapCat Framework 专属无头引擎 (免客户端
 const child = spawn(exePath, [qqExe, dllPath, cjsPath], {
   cwd: path.resolve("tools/napcat_framework"),
   stdio: "inherit",
-  detached: true,
 });
 
-child.unref();
-console.log("✅ NapCat Framework 启动成功！已建立无干扰长连接。");
+child.on("exit", (code) => {
+  console.log(`NapCat 进程退出，退出码: ${code}`);
+});
