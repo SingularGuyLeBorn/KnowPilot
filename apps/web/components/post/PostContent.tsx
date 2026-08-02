@@ -1,6 +1,6 @@
 "use client";
 
-import { memo, useMemo, useState, useId, isValidElement, type ReactNode, type ReactElement, type ComponentPropsWithoutRef } from "react";
+import { memo, useMemo, useState, useId, useRef, useEffect, isValidElement, type ReactNode, type ReactElement, type ComponentPropsWithoutRef } from "react";
 import ReactMarkdown from "react-markdown";
 import type { Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -12,7 +12,7 @@ import { cn } from "@/lib/utils";
 // KaTeX CSS 只在根布局 layout.tsx 导入一次，避免 client chunk 延迟加载导致公式初始闪烁
 import { transformWikiLinks } from "./WikiLink";
 import { PostMarkdownLink } from "./PostMarkdownLink";
-import { RoughAnnotation } from "./RoughAnnotation";
+import { RoughAnnotation, type RoughAnnotationProps } from "./RoughAnnotation";
 import { memoizeMarkdownTransform } from "@knowpilot/shared";
 import { useShowCodeLineNumbers } from "@/lib/codeBlockPrefs";
 import { MarkdownTable } from "@/components/post/MarkdownTable";
@@ -665,12 +665,19 @@ export const PostContent = memo(function PostContent({
               : typeof rest["dataBracket"] === "string"
               ? rest["dataBracket"]
               : undefined;
+          const target =
+            typeof rest["data-target"] === "string"
+              ? rest["data-target"]
+              : typeof rest["dataTarget"] === "string"
+              ? rest["dataTarget"]
+              : undefined;
 
           return (
             <RoughAnnotation
               type={annotationType}
               color={color}
-              bracket={bracket as "left" | "right" | "top" | "bottom"}
+              bracket={bracket as RoughAnnotationProps["bracket"]}
+              target={target}
               strokeWidth={
                 typeof rest["data-stroke-width"] === "string"
                   ? Number(rest["data-stroke-width"])

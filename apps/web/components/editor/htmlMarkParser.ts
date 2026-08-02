@@ -14,6 +14,7 @@ export interface MarkHtmlData {
   animate: boolean;
   animationDuration: number;
   bracket: string;
+  target: string;
 }
 
 const DEFAULTS = {
@@ -26,6 +27,7 @@ const DEFAULTS = {
   animate: true,
   animationDuration: 800,
   bracket: "",
+  target: "",
 };
 
 export function parseMarkHtml(raw: string): MarkHtmlData | null {
@@ -46,6 +48,7 @@ export function parseMarkHtml(raw: string): MarkHtmlData | null {
     animate: parseBoolean(attrs["data-animate"], DEFAULTS.animate),
     animationDuration: parseNumber(attrs["data-animation-duration"], DEFAULTS.animationDuration),
     bracket: attrs["data-bracket"] || DEFAULTS.bracket,
+    target: attrs["data-target"] || DEFAULTS.target,
   };
 }
 
@@ -86,6 +89,7 @@ export function serializeMarkHtml(attrs: MarkHtmlData): string {
     parts.push(`data-animation-duration="${attrs.animationDuration}"`);
   }
   if (attrs.bracket) parts.push(`data-bracket="${attrs.bracket}"`);
+  if (attrs.target) parts.push(`data-target="${attrs.target}"`);
   parts.push(`>${attrs.value}</mark>`);
   return parts.join(" ");
 }

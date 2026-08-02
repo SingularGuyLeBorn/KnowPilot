@@ -11,11 +11,21 @@ import type { NodeView } from "@milkdown/prose/view";
 import { $node } from "@milkdown/utils";
 import { $view } from "@milkdown/utils";
 import { annotate } from "rough-notation";
+import { createArrowAnnotation } from "@/components/post/arrowAnnotation";
 import type { RoughAnnotationType } from "@/components/post/RoughAnnotation";
 import type { MarkHtmlData } from "./htmlMarkParser";
 import { parseMarkHtml, serializeMarkHtml } from "./htmlMarkParser";
 
-const DEFAULT_COLOR = "#e74c3c";
+const DEFAULT_COLORS: Record<string, string> = {
+  underline: "#f97316",
+  circle: "#3b82f6",
+  highlight: "#facc15",
+  box: "#22c55e",
+  bracket: "#a855f7",
+  arrow: "#3b82f6",
+  "crossed-off": "#ef4444",
+  "strike-through": "#ef4444",
+};
 
 const VALID_TYPES = new Set<string>([
   "underline",
@@ -25,17 +35,20 @@ const VALID_TYPES = new Set<string>([
   "bracket",
   "crossed-off",
   "strike-through",
+  "arrow",
 ]);
+
+type RnType = Exclude<RoughAnnotationType, "arrow">;
 
 /** 创建时动画配置（统一入口，避免散落默认值） */
 function buildAnnotationConfig(attrs: MarkHtmlData) {
-  const type = VALID_TYPES.has(attrs.annotation) ? attrs.annotation : "underline";
-  const color = attrs.color || DEFAULT_COLOR;
+  const type = VALID_TYPES.has(attrs.annotation) && attrs.annotation !== "arrow" ? attrs.annotation : "underline";
+  const color = attrs.color || DEFAULT_COLORS[type] || DEFAULT_COLORS.underline;
   const bracketList = type === "bracket" && attrs.bracket
     ? attrs.bracket.split(/\s+/).filter((b) => ["left", "right", "top", "bottom"].includes(b))
     : [];
   return {
-    type: type as RoughAnnotationType,
+    type: type as RnType,
     color,
     strokeWidth: Number(attrs.strokeWidth) || 2,
     padding: Number(attrs.padding) || 2,
@@ -66,6 +79,7 @@ export const htmlMarkSchema = $node("html_mark", () => ({
     animate: { default: true },
     animationDuration: { default: 800 },
     bracket: { default: "" },
+    target: { default: "" },
   },
   parseDOM: [
     {
@@ -89,6 +103,7 @@ export const htmlMarkSchema = $node("html_mark", () => ({
         "data-annotation": attrs.annotation,
         ...(attrs.color ? { "data-color": attrs.color } : {}),
         ...(attrs.bracket ? { "data-bracket": attrs.bracket } : {}),
+        ...(attrs.target ? { "data-target": attrs.target } : {}),
         class: "kp-html-mark",
       },
       attrs.value,
@@ -143,6 +158,7 @@ function createHtmlMarkView(node: ProseNode): NodeView {
   let io: IntersectionObserver | null = null;
   let roTimer: ReturnType<typeof setTimeout> | null = null;
   let lastParentRect: DOMRectReadOnly | null = null;
+  let destroyArrow: (() => void) | null = null;
 
   const removeAnnotation = () => {
     annotation?.remove();
@@ -165,7 +181,15 @@ function createHtmlMarkView(node: ProseNode): NodeView {
     applyAnnotation();
   };
 
-  if (attrs.animate && typeof IntersectionObserver !== "undefined") {
+  const isArrow = attrs.annotation === "arrow" && attrs.target;
+
+  if (isArrow) {
+    destroyArrow = createArrowAnnotation(content, attrs.target, {
+      color: attrs.color || DEFAULT_COLORS.arrow,
+      strokeWidth: Number(attrs.strokeWidth) || 2,
+      roughness: 1.5,
+    });
+  } else if (attrs.animate && typeof IntersectionObserver !== "undefined") {
     io = new IntersectionObserver(
       (entries) => {
         for (const entry of entries) {
@@ -186,7 +210,7 @@ function createHtmlMarkView(node: ProseNode): NodeView {
   // 不观察 wrapper（含 SVG）避免插入/移除 SVG 触发 ResizeObserver → refresh 死循环；
   // 只观察 wrapper 父级段落，且只在尺寸变化超过 2px 并防抖 150ms 后才 refresh，
   // 避免鼠标 hover/微小布局抖动导致手绘层被 remove/show 反复重建而闪烁或消失。
-  if (typeof ResizeObserver !== "undefined") {
+  if (!isArrow && typeof ResizeObserver !== "undefined") {
     ro = new ResizeObserver((entries) => {
       const entry = entries[0];
       if (!entry) return;
@@ -222,12 +246,31 @@ function createHtmlMarkView(node: ProseNode): NodeView {
       else delete dom.dataset.color;
       if (next.bracket) dom.dataset.bracket = next.bracket;
       else delete dom.dataset.bracket;
+      if (next.target) dom.dataset.target = next.target;
+      else delete dom.dataset.target;
+      if (next.annotation === "arrow" && next.target) {
+        destroyArrow?.();
+        destroyArrow = createArrowAnnotation(content, next.target, {
+          color: next.color || DEFAULT_COLORS.arrow,
+          strokeWidth: Number(next.strokeWidth) || 2,
+          roughness: 1.5,
+        });
+        return true;
+      }
+      if (destroyArrow) {
+        destroyArrow();
+        destroyArrow = null;
+      }
       removeAnnotation();
       applyAnnotation();
       return true;
     },
     ignoreMutation: () => true,
     destroy() {
+      if (destroyArrow) {
+        destroyArrow();
+        destroyArrow = null;
+      }
       removeAnnotation();
       if (roTimer) {
         clearTimeout(roTimer);

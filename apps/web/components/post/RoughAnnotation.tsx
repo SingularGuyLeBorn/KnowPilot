@@ -27,6 +27,9 @@
 
 import { useEffect, useRef, type ReactNode } from "react";
 import { annotate } from "rough-notation";
+import {
+  createArrowAnnotation,
+} from "./arrowAnnotation";
 
 export type RoughAnnotationType =
   | "underline"
@@ -35,7 +38,8 @@ export type RoughAnnotationType =
   | "box"
   | "bracket"
   | "crossed-off"
-  | "strike-through";
+  | "strike-through"
+  | "arrow";
 
 const VALID_TYPES = new Set<string>([
   "underline",
@@ -45,19 +49,22 @@ const VALID_TYPES = new Set<string>([
   "bracket",
   "crossed-off",
   "strike-through",
+  "arrow",
 ]);
 
 /**
  * 默认颜色映射：不同标注类型用不同默认色（用户可通过 data-color 覆盖）
+ * _palette 取自 mdtask.dev 参考风格：柔和但可区分。
  */
 const DEFAULT_COLORS: Record<string, string> = {
-  underline: "#e74c3c",
-  circle: "#3498db",
-  highlight: "#fef08a",
-  box: "#2ecc71",
-  bracket: "#9b59b6",
-  "crossed-off": "#e74c3c",
-  "strike-through": "#e74c3c",
+  underline: "#f97316",
+  circle: "#3b82f6",
+  highlight: "#facc15",
+  box: "#22c55e",
+  bracket: "#a855f7",
+  arrow: "#3b82f6",
+  "crossed-off": "#ef4444",
+  "strike-through": "#ef4444",
 };
 
 const VALID_BRACKETS = new Set<string>(["left", "right", "top", "bottom"]);
@@ -81,6 +88,7 @@ export interface RoughAnnotationProps {
   animate?: boolean;
   animationDuration?: number;
   bracket?: "left" | "right" | "top" | "bottom" | ("left" | "right" | "top" | "bottom")[];
+  target?: string;
   children: ReactNode;
   className?: string;
 }
@@ -95,6 +103,7 @@ export function RoughAnnotation({
   animate = true,
   animationDuration = 800,
   bracket,
+  target,
   children,
   className,
 }: RoughAnnotationProps) {
@@ -105,14 +114,29 @@ export function RoughAnnotation({
     ? (type as RoughAnnotationType)
     : "underline";
 
-  const resolvedColor = color || DEFAULT_COLORS[resolvedType] || "#e74c3c";
+  const resolvedColor = color || DEFAULT_COLORS[resolvedType] || DEFAULT_COLORS.underline;
+
+  // rough-notation 不支持 arrow；arrow 分支走自定义 arrowAnnotation。
+  const rnType = resolvedType === "arrow" ? "underline" : resolvedType;
 
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
 
+    // arrow 类型走自定义箭头层，不经过 rough-notation
+    if (resolvedType === "arrow" && target) {
+      const destroy = createArrowAnnotation(el, target, {
+        color: resolvedColor,
+        strokeWidth,
+        roughness: 1.5,
+      });
+      return () => {
+        destroy();
+      };
+    }
+
     let ann = annotate(el, {
-      type: resolvedType,
+      type: rnType,
       color: resolvedColor,
       strokeWidth,
       padding,
@@ -135,7 +159,7 @@ export function RoughAnnotation({
     const refresh = () => {
       ann.remove();
       annotationRef.current = ann = annotate(el, {
-        type: resolvedType,
+        type: rnType,
         color: resolvedColor,
         strokeWidth,
         padding,
@@ -191,6 +215,7 @@ export function RoughAnnotation({
     animate,
     animationDuration,
     bracket,
+    target,
   ]);
 
   return (
