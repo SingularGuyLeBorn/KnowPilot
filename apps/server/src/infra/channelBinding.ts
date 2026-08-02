@@ -23,6 +23,15 @@ export type ChannelBindingRow = {
 };
 
 async function resolveDefaultAgentId(prisma: PrismaClient): Promise<{ id: string; model: string }> {
+  const qqBot = await prisma.agent.findFirst({
+    where: {
+      status: { not: "deleted" },
+      OR: [{ sourceSlug: "qq-bot" }, { name: { contains: "QQ" } }],
+    },
+    select: { id: true, model: true },
+  });
+  if (qqBot) return { id: qqBot.id, model: qqBot.model || DEFAULT_LLM_MODEL };
+
   const assistant = await prisma.agent.findFirst({
     where: {
       status: { not: "deleted" },

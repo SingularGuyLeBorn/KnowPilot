@@ -768,7 +768,7 @@ const server = app.listen(PORT, HOST, () => {
   }
 
   // 初始化 IM 消息网关与适配器 (QQ / 飞书 / OneBot)
-  bootstrapMessageChannels({ prisma, services: serviceContainer, config })
+  bootstrapMessageChannels({ prisma, services, config })
     .then(() => console.log("  💬 [MessageChannels] IM 消息网关与 Adapter 已成功挂载"))
     .catch((err) => console.warn("  ⚠️ [MessageChannels] 初始化失败:", err));
 });

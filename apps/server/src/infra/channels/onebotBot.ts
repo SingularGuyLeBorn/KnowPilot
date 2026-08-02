@@ -10,12 +10,45 @@
  */
 
 import crypto from "node:crypto";
+import fs from "node:fs";
+import path from "node:path";
 import type {
   ChannelAdapter,
   ChannelReplyChunk,
   UnifiedMessage,
 } from "../messageGateway.js";
 import { handleIncomingMessage } from "../messageGateway.js";
+
+async function saveOneBotImageLocally(url: string): Promise<string | null> {
+  if (!url || !url.startsWith("http")) {
+    console.log(`[onebot] 跳过非 HTTP 图片 URL: ${url}`);
+    return null;
+  }
+  try {
+    console.log(`[onebot] 正在下载图片: ${url}`);
+    const res = await fetch(url);
+    if (!res.ok) {
+      console.warn(`[onebot] 下载图片失败 HTTP ${res.status}: ${url}`);
+      return null;
+    }
+    const arrayBuffer = await res.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+
+    const projectRoot = process.env.PROJECT_ROOT || path.resolve(process.cwd().includes("apps") ? path.join(process.cwd(), "../..") : process.cwd());
+    const uploadsDir = path.resolve(projectRoot, "content/uploads");
+    if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
+
+    const filename = `qq-img-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.png`;
+    const filepath = path.join(uploadsDir, filename);
+    fs.writeFileSync(filepath, buffer);
+    console.log(`✅ [onebot] 图片已转存至本地: /uploads/${filename}`);
+
+    return `/uploads/${filename}`;
+  } catch (err) {
+    console.warn(`[onebot] 图片下载保存异常 (${url}):`, err instanceof Error ? err.message : err);
+    return null;
+  }
+}
 
 export type OneBotConfig = {
   httpUrl: string;
@@ -101,35 +134,65 @@ export function createOneBotAdapter(cfg: OneBotConfig): ChannelAdapter {
     const groupId = b.group_id ? String(b.group_id).trim() : undefined;
     const msgId = String(b.message_id ?? crypto.randomUUID());
     
-    // 文本清洗：从 raw_message、message 数组或 string 提取文本
-    let rawText = "";
-    if (typeof b.raw_message === "string" && b.raw_message) {
-      rawText = b.raw_message;
-    } else if (typeof b.message === "string") {
-      rawText = b.message;
-    } else if (Array.isArray(b.message)) {
-      rawText = b.message
-        .map((seg: any) => {
-          if (seg.type === "text") return seg.data?.text ?? "";
-          return "";
-        })
-        .join("");
-    }
+    // 异步解析消息中的文本、图片 (CQ 码 / Segment 数组)
+    (async () => {
+      let textParts: string[] = [];
+      let imageUrlsToDownload: string[] = [];
 
-    // 去除 [CQ:at,qq=...]
-    rawText = rawText.replace(/\[CQ:at,qq=[^\]]+\]/g, "").trim();
-    // 去除 CQ 码占位符
-    rawText = rawText.replace(/\[CQ:[^\]]+\]/g, "").trim();
+      if (Array.isArray(b.message)) {
+        for (const seg of b.message as any[]) {
+          if (seg.type === "text") {
+            if (seg.data?.text) textParts.push(seg.data.text);
+          } else if (seg.type === "image") {
+            const imgUrl = seg.data?.url || (seg.data?.file?.startsWith("http") ? seg.data.file : "");
+            if (imgUrl) imageUrlsToDownload.push(imgUrl);
+          }
+        }
+      } else if (typeof b.raw_message === "string" && b.raw_message) {
+        let raw = b.raw_message;
 
-    if (!userId || !rawText) {
-      return { ok: false as const, error: "缺少 user_id 或有效文本内容" };
-    }
+        // 提取 CQ:image 中的 url
+        const cqImgRegex = /\[CQ:image,[^\]]*url=([^,\]]+)/g;
+        let match: RegExpExecArray | null;
+        while ((match = cqImgRegex.exec(raw)) !== null) {
+          if (match[1]) imageUrlsToDownload.push(match[1]);
+        }
 
-    ingestText({
-      userId,
-      text: rawText,
-      msgId,
-      groupId: messageType === "group" ? groupId : undefined,
+        // 清洗 CQ 码
+        raw = raw.replace(/\[CQ:at,qq=[^\]]+\]/g, "").trim();
+        raw = raw.replace(/\[CQ:[^\]]+\]/g, "").trim();
+        if (raw) textParts.push(raw);
+      }
+
+      // 下载并保存本地图片
+      const localImageMarkdownList: string[] = [];
+      for (const imgUrl of imageUrlsToDownload) {
+        const localPath = await saveOneBotImageLocally(imgUrl);
+        if (localPath) {
+          localImageMarkdownList.push(`![QQ图片](${localPath})`);
+        }
+      }
+
+      let combinedText = textParts.join("\n").trim();
+      if (localImageMarkdownList.length > 0) {
+        combinedText = combinedText
+          ? `${combinedText}\n\n${localImageMarkdownList.join("\n")}`
+          : localImageMarkdownList.join("\n");
+      }
+
+      if (!userId || !combinedText) {
+        console.warn("[onebot] 缺少 user_id 或有效内容/图片，跳过处理");
+        return;
+      }
+
+      ingestText({
+        userId,
+        text: combinedText,
+        msgId,
+        groupId: messageType === "group" ? groupId : undefined,
+      });
+    })().catch((err) => {
+      console.error("[onebot] 异步解析 Webhook 消息失败:", err);
     });
 
     return { ok: true as const };
