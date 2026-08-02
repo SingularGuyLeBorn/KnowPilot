@@ -45,7 +45,8 @@ function loadRootEnv() {
   }
   console.log(`  ✅ 已加载根目录 .env：${loaded} 个键（已存在环境变量不覆盖）`);
   if (process.env.ONEBOT_QQ_ACCOUNT) {
-    console.log(`  🤖 检测到 ONEBOT_QQ_ACCOUNT=${process.env.ONEBOT_QQ_ACCOUNT}，将自动启动 NapCat`);
+    const autoOpen = process.env.ONEBOT_QQ_AUTO_OPEN !== "false";
+    console.log(`  🤖 检测到 ONEBOT_QQ_ACCOUNT=${process.env.ONEBOT_QQ_ACCOUNT}，${autoOpen ? "将自动打开 QQ/NapCat 实例" : "自动打开已关闭，仅连接已运行实例"}`);
   } else {
     console.log(`  ℹ️  未配置 ONEBOT_QQ_ACCOUNT，NapCat 不会自动启动`);
   }

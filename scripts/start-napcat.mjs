@@ -35,6 +35,8 @@ const QQ_EXE = (process.env.ONEBOT_QQ_EXE || "D:\\Program Files\\Tencent\\QQNT\\
 const KILL_ON_MISMATCH = (process.env.ONEBOT_QQ_KILL_ON_MISMATCH || "false").trim().toLowerCase() !== "false";
 const WEBHOOK_URL = (process.env.ONEBOT_WEBHOOK_URL || "http://localhost:3010/api/webhooks/onebot").trim();
 const QQ_MULTI_OPEN = (process.env.ONEBOT_QQ_MULTI_OPEN || "true").trim().toLowerCase() !== "false";
+const QQ_AUTO_OPEN = (process.env.ONEBOT_QQ_AUTO_OPEN || "true").trim().toLowerCase() !== "false";
+const QQ_LOGIN_TIMEOUT_MS = Math.max(30000, parseInt(process.env.ONEBOT_QQ_LOGIN_TIMEOUT_MS || "120000", 10));
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -199,23 +201,30 @@ function killBotQQ() {
   } catch {}
 }
 
-async function pollSelfId(timeoutMs = 60000) {
+async function pollSelfId(timeoutMs = QQ_LOGIN_TIMEOUT_MS) {
   if (!QQ_ACCOUNT) return { ok: true, selfId: null };
   const start = Date.now();
+  let lastNotify = 0;
   console.log(`🔍 校验 NapCat 登录账号是否为目标 ${QQ_ACCOUNT}…`);
+  console.log(`⏳ 已打开 QQ 登录窗口，请登录 ${QQ_ACCOUNT}；脚本将等待 ${timeoutMs / 1000}s 检测登录态…`);
   while (Date.now() - start < timeoutMs) {
     const info = await fetchLoginInfo(3000);
     if (info.selfId) {
       if (info.selfId === QQ_ACCOUNT) {
-        console.log(`✅ 校验通过：当前登录账号 ${info.selfId}`);
+        console.log(`✅ 登录态检测成功：当前登录账号 ${info.selfId}`);
         return { ok: true, selfId: info.selfId };
       }
       console.error(`❌ 账号不匹配：当前登录为 ${info.selfId}，但配置要求 ${QQ_ACCOUNT}。`);
       return { ok: false, selfId: info.selfId };
     }
-    await new Promise((resolve) => setTimeout(resolve, 1500));
+    const elapsed = Date.now() - start;
+    if (elapsed - lastNotify >= 10000) {
+      console.log(`⏳ 等待登录中… 已等待 ${Math.round(elapsed / 1000)}s / ${timeoutMs / 1000}s`);
+      lastNotify = elapsed;
+    }
+    await sleep(1500);
   }
-  console.error(`❌ 在 ${timeoutMs / 1000}s 内未检测到 NapCat /get_login_info 返回；请检查 QQ 是否已登录。`);
+  console.error(`❌ 登录超时：在 ${timeoutMs / 1000}s 内未检测到 NapCat /get_login_info 返回；请检查 QQ 是否已登录。`);
   return { ok: false, selfId: null };
 }
 
@@ -228,12 +237,16 @@ async function main() {
     console.log("🤖 兼容模式：未配置 ONEBOT_QQ_ACCOUNT，保留多账号配置");
   }
 
+  if (!QQ_AUTO_OPEN) {
+    console.log("🔕 ONEBOT_QQ_AUTO_OPEN=false，不主动打开 QQ/NapCat 新实例。");
+  }
+
   configureNapCat();
 
   // 先检查是否已经有目标账号的 NapCat 在线，避免重复启动
   const existing = await fetchLoginInfo(3000);
   if (QQ_ACCOUNT && existing.selfId === QQ_ACCOUNT) {
-    console.log(`✅ 检测到 QQ ${QQ_ACCOUNT} 已在线，无需重复启动。`);
+    console.log(`✅ 检测到目标 QQ ${QQ_ACCOUNT} 已在线，无需重复启动。`);
     return;
   }
 
@@ -241,6 +254,15 @@ async function main() {
   const existingSelfId = existing.selfId;
   if (existingSelfId) {
     console.log(`ℹ️ 检测到已有一个 QQ 实例在线：${existingSelfId}（不会关闭它）。`);
+  }
+
+  if (!QQ_AUTO_OPEN) {
+    if (existingSelfId) {
+      console.log(`ℹ️ 当前已有 QQ 在线：${existingSelfId}，自动打开已关闭，不执行多开。`);
+    } else {
+      console.log("⚠️ 未检测到任何 QQ 在线，且自动打开已关闭。请手动启动 NapCat/QQ 后重试。");
+    }
+    return;
   }
 
   const qqRunning = isProcessRunning("QQ.exe");
@@ -301,7 +323,7 @@ async function main() {
     } else if (selfId) {
       console.error(`❌ 账号不匹配：当前登录为 ${selfId}，但配置要求 ${QQ_ACCOUNT}。`);
     } else {
-      console.error(`❌ 在 60s 内未检测到 NapCat /get_login_info 返回；请检查 QQ 是否已登录。`);
+      console.error(`❌ 在 ${QQ_LOGIN_TIMEOUT_MS / 1000}s 内未检测到 NapCat /get_login_info 返回；请检查 QQ 是否已登录。`);
     }
     if (KILL_ON_MISMATCH) {
       console.log("⚠️ ONEBOT_QQ_KILL_ON_MISMATCH=true，关闭本次启动的 NapCat/QQ 进程树…");
