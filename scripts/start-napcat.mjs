@@ -1,25 +1,18 @@
 import { spawn } from "child_process";
 import path from "path";
-import fs from "fs";
 
-const qqDir = "D:\\Program Files\\Tencent\\QQNT";
-const exePath = path.join(qqDir, "NapCatWinBootMain.exe");
+const qqExe = "D:\\Program Files\\Tencent\\QQNT\\QQ.exe";
+const dllPath = path.resolve("tools/napcat_framework/napiloader.dll");
+const cjsPath = path.resolve("tools/napcat_framework/nativeLoader.cjs");
+const exePath = path.resolve("tools/napcat_framework/napimain.exe");
 
-if (!fs.existsSync(exePath)) {
-  const srcHook = path.resolve("tools/napcat/bootmain/NapCatWinBootHook.dll");
-  const srcMain = path.resolve("tools/napcat/bootmain/NapCatWinBootMain.exe");
-  fs.copyFileSync(srcHook, path.join(qqDir, "NapCatWinBootHook.dll"));
-  fs.copyFileSync(srcMain, exePath);
-}
+console.log("🚀 正在启动 NapCat Framework 专属无头引擎 (免客户端更新/免浏览器挂载)...");
 
-console.log("🚀 启动 NapCatQQ 注入引擎...");
-console.log("工作目录:", qqDir);
-
-const child = spawn(exePath, [], {
-  cwd: qqDir,
+const child = spawn(exePath, [qqExe, dllPath, cjsPath], {
+  cwd: path.resolve("tools/napcat_framework"),
   stdio: "inherit",
   detached: true,
 });
 
 child.unref();
-console.log("✅ NapCatQQ 已成功唤起！");
+console.log("✅ NapCat Framework 启动成功！已建立无干扰长连接。");
