@@ -85,13 +85,33 @@ function tryCommitAfterHydrate(sessionId: string, messages: ChatMessage[]): void
   }
 }
 
+/** 简单对象/数组深度比较；键顺序由同一来源保证 */
+function shallowEq(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (a == null || b == null) return a === b;
+  if (typeof a !== typeof b) return false;
+  if (typeof a !== "object") return false;
+  try {
+    return JSON.stringify(a) === JSON.stringify(b);
+  } catch {
+    return false;
+  }
+}
+
 /** upsert / hydrate 共用：内容字段全等则 skip */
 function messageFieldsEqual(a: ChatMessage, b: ChatMessage): boolean {
   return (
+    a.role === b.role &&
     a.content === b.content &&
-    a.toolCalls === b.toolCalls &&
-    a.toolResults === b.toolResults &&
-    a.tokenUsage === b.tokenUsage
+    a.source === b.source &&
+    a.parentId === b.parentId &&
+    a.label === b.label &&
+    a.kind === b.kind &&
+    a.finishReason === b.finishReason &&
+    shallowEq(a.attachments, b.attachments) &&
+    shallowEq(a.toolCalls, b.toolCalls) &&
+    shallowEq(a.toolResults, b.toolResults) &&
+    shallowEq(a.tokenUsage, b.tokenUsage)
   );
 }
 
@@ -398,6 +418,11 @@ export function __resetSessionMessageStoreForTests(): void {
   globalStore = null;
   hydratedSessionsGlobal.clear();
   inflightHydrate.clear();
+}
+
+/** 单测专用：暴露内部字段比较逻辑 */
+export function __messageFieldsEqualForTests(a: ChatMessage, b: ChatMessage): boolean {
+  return messageFieldsEqual(a, b);
 }
 
 const EMPTY_ARRAY: ChatMessage[] = [];

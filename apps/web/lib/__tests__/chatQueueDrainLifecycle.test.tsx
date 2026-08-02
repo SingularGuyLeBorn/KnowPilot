@@ -36,8 +36,6 @@ vi.mock("@/lib/trpc", () => ({
       consumeSessionQueueItem: { useMutation: () => mockMutation(() => Promise.resolve({ claimed: true })) },
       finalizeSessionQueueItem: { useMutation: () => mockMutation(() => Promise.resolve({ success: true })) },
       unclaimSessionQueueItem: { useMutation: () => mockMutation(() => Promise.resolve({ success: true })) },
-      ackAsyncDelivery: { useMutation: () => mockMutation(() => Promise.resolve({ claimed: true })) },
-      pullAsyncQueue: { useQuery: () => ({ data: undefined, refetch: vi.fn(), isLoading: false }) },
       createSessionQueueItem: { useMutation: () => mockMutation() },
     },
     useUtils: () => ({
@@ -70,14 +68,11 @@ function makeParams(runStream: (opts: RunStreamOptions) => Promise<RunStreamOutc
   return {
     effectiveSessionId: SID,
     visibleSessionIds: [SID],
-    asyncResultQueue: [],
     isSessionRunOccupied: (sid) => streamLifecycleStore.isRunOccupied(sid),
     sessionsItems: [{ id: SID, agentId: "agent-1" }],
     consumeSessionQueueItemMutation: mockMutation(() => Promise.resolve({ claimed: true })) as never,
     finalizeSessionQueueItemMutation: mockMutation(() => Promise.resolve({ success: true })) as never,
     unclaimSessionQueueItemMutation: mockMutation(() => Promise.resolve({ success: true })) as never,
-    ackAsyncDeliveryMutation: mockMutation(() => Promise.resolve({ claimed: true })) as never,
-    asyncQueueQuery: { data: undefined, refetch: vi.fn(), isLoading: false } as never,
     runStream,
     consumeRef: dummyConsumeRef,
   };

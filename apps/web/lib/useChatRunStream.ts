@@ -253,6 +253,11 @@ export function useChatRunStream({
 
       // E8：运行时按 originSid 取权威 config，禁止吃 React 闭包首帧 DEFAULT / 错 pane
       const runtimeConfig = ensureSessionConfigHydrated(originSid);
+      // E8：后台 drain 非焦点 session 时，必须用目标 session 所属 Agent 的 systemPrompt。
+      // sessionConfigStore 在会话创建/迁移时已写入 agentSystemPrompt；无则回退到焦点 selectedAgent。
+      const fallbackSystemPrompt = runtimeConfig.agentSystemPrompt?.trim()
+        ? runtimeConfig.agentSystemPrompt
+        : selectedAgent?.systemPrompt;
       const streamConfig = buildStreamConfig(
         {
           ...runtimeConfig,
@@ -260,7 +265,7 @@ export function useChatRunStream({
             ? { systemPrompt: opts.skillPrompt, customSystemPrompt: true }
             : {}),
         },
-        selectedAgent ? { systemPrompt: selectedAgent.systemPrompt } : undefined,
+        fallbackSystemPrompt ? { systemPrompt: fallbackSystemPrompt } : undefined,
       );
 
       try {

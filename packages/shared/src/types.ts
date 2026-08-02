@@ -235,6 +235,10 @@ export interface ChatSessionConfig {
   toolCallTimeoutMs?: number;
   /** 单轮对话最大工具调用轮数（0/缺省走后端全局默认） */
   maxToolRounds?: number;
+  /** E8：该会话所属 Agent id（后台 drain 时取 systemPrompt 用） */
+  agentId?: string;
+  /** E8：该会话所属 Agent 的默认 systemPrompt（用户未自定义时作为 fallback） */
+  agentSystemPrompt?: string;
 }
 
 /** 会话实体 */

@@ -52,6 +52,7 @@ import {
 } from "@/lib/chatKeys";
 import {
   ensureSessionConfigHydrated,
+  getSessionConfig,
   getSessionConfigSnapshot,
   migrateSessionConfig,
   patchSessionConfig,
@@ -363,7 +364,6 @@ export function ChatView() {
   const unclaimSessionQueueItemMutation = trpc.agent.unclaimSessionQueueItem.useMutation();
   const deleteSessionQueueItemMutation = trpc.agent.deleteSessionQueueItem.useMutation();
   const reorderSessionQueueItemsMutation = trpc.agent.reorderSessionQueueItems.useMutation();
-  const ackAsyncDeliveryMutation = trpc.agent.ackAsyncDelivery.useMutation();
   // 推优先：agent_message SSE 触发 refetch；仅错误时兜底轮询
   const pullAgentMessagesQuery = trpc.agent.pullAgentMessages.useQuery(
     { agentId: effectiveAgentId! },
@@ -792,14 +792,11 @@ export function ChatView() {
   const { drainAllPendingQueues } = useChatQueueDrain({
     effectiveSessionId,
     visibleSessionIds,
-    asyncResultQueue,
     isSessionRunOccupied,
     sessionsItems: sessionsQuery.data?.items,
     consumeSessionQueueItemMutation,
     finalizeSessionQueueItemMutation,
     unclaimSessionQueueItemMutation,
-    ackAsyncDeliveryMutation,
-    asyncQueueQuery,
     runStream,
     consumeRef,
   });
@@ -844,6 +841,10 @@ export function ChatView() {
       if (!aid || backendDown) return null;
       try {
         const res = await ensureMainMutateAsync({ agentId: aid });
+        // E8：把 Agent 归属写进 NEW_STREAM_KEY config 后再迁移，后台 drain 才不会用错 systemPrompt
+        const agent = (agentsQuery.data?.items ?? []).find((a: Agent) => a.id === aid);
+        const cfg = resolveNewChatConfig(getSessionConfig(NEW_STREAM_KEY), agent);
+        setSessionConfig(NEW_STREAM_KEY, cfg);
         migrateSessionConfig(NEW_STREAM_KEY, res.id);
         openTab(res.id);
         utils.session.list.invalidate().catch(catchUnlessCancelled("components/chat.tsx"));
@@ -852,7 +853,7 @@ export function ChatView() {
         return null;
       }
     },
-    [backendDown, ensureMainMutateAsync, openTab, utils.session.list],
+    [backendDown, ensureMainMutateAsync, openTab, utils.session.list, agentsQuery.data],
   );
 
   // 水合后若仍无焦点会话：落到当前 Agent 主会话（禁止长期停在 NEW_STREAM_KEY / 无 id）

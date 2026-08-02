@@ -52,4 +52,17 @@ describe("sessionConfigStore (E8)", () => {
     migrateSessionConfig("__new__", "sid-from-ls");
     expect(getSessionConfig("sid-from-ls").model).toBe("from-ls");
   });
+
+  it("migrate 保留 Agent 归属字段（E8）", () => {
+    setSessionConfig("__new__", {
+      ...DEFAULT_CHAT_CONFIG,
+      agentId: "agent-1",
+      agentSystemPrompt: "agent-system",
+    });
+    migrateSessionConfig("__new__", "real-sid");
+    const cfg = getSessionConfig("real-sid");
+    expect(cfg.agentId).toBe("agent-1");
+    expect(cfg.agentSystemPrompt).toBe("agent-system");
+    expect(getSessionConfig("__new__").agentId).toBeUndefined();
+  });
 });

@@ -81,15 +81,21 @@ export function loadDefaultChatConfig(): ChatSessionConfig {
 /** 新对话：未自定义 Prompt 时跟随 Agent 默认 systemPrompt */
 export function resolveNewChatConfig(
   base: ChatSessionConfig,
-  agent?: { model: string; systemPrompt: string } | null,
+  agent?: { id?: string; model: string; systemPrompt: string } | null,
 ): ChatSessionConfig {
-  if (!agent || base.customSystemPrompt) return base;
+  if (!agent) return base;
+  if (base.customSystemPrompt) {
+    // 即使用户自定义了 prompt，仍记录 Agent 归属，供后台 drain 等场景识别
+    return { ...base, agentId: agent.id, agentSystemPrompt: agent.systemPrompt };
+  }
   return {
     ...base,
     // 新对话默认跟随 Agent 的模型，避免 localStorage 中旧模型长期覆盖
     model: agent.model,
     systemPrompt: agent.systemPrompt,
     customSystemPrompt: false,
+    agentId: agent.id,
+    agentSystemPrompt: agent.systemPrompt,
   };
 }
 

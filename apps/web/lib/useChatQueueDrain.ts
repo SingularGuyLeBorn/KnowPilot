@@ -22,7 +22,6 @@ import { sessionComposeActions, sessionComposeStore } from "@/lib/useSessionComp
 import { type RunStreamOptions, type RunStreamOutcome } from "@/lib/useChatRunStream";
 import { NEW_STREAM_KEY } from "@/lib/chatKeys";
 import { getSessionConfig } from "@/lib/sessionConfigStore";
-import { mergeAsyncQueueFromCache } from "@/lib/refreshSessionAsyncQueue";
 
 export type AckAsyncDeliveryFn = (input: { jobId: string }) => Promise<{ claimed: boolean }>;
 
@@ -63,14 +62,11 @@ export interface UseChatQueueDrainParams {
   effectiveSessionId: string | null;
   /** 可见 pane 的 sessionId（分屏时两侧）；仅这些会话自动 drain */
   visibleSessionIds?: string[];
-  asyncResultQueue: ChatQueueItem[];
   isSessionRunOccupied: (sid: string | null) => boolean;
   sessionsItems: Array<{ id: string; agentId?: string | null }> | undefined;
   consumeSessionQueueItemMutation: ReturnType<typeof trpc.agent.consumeSessionQueueItem.useMutation>;
   finalizeSessionQueueItemMutation: ReturnType<typeof trpc.agent.finalizeSessionQueueItem.useMutation>;
   unclaimSessionQueueItemMutation: ReturnType<typeof trpc.agent.unclaimSessionQueueItem.useMutation>;
-  ackAsyncDeliveryMutation: ReturnType<typeof trpc.agent.ackAsyncDelivery.useMutation>;
-  asyncQueueQuery: ReturnType<typeof trpc.agent.pullAsyncQueue.useQuery>;
   runStream: (opts: RunStreamOptions) => Promise<RunStreamOutcome>;
   consumeRef: RefObject<(preferredSessionId?: string) => void>;
 }
@@ -78,14 +74,11 @@ export interface UseChatQueueDrainParams {
 export function useChatQueueDrain({
   effectiveSessionId,
   visibleSessionIds,
-  asyncResultQueue,
   isSessionRunOccupied,
   sessionsItems,
   consumeSessionQueueItemMutation,
   finalizeSessionQueueItemMutation,
   unclaimSessionQueueItemMutation,
-  ackAsyncDeliveryMutation,
-  asyncQueueQuery,
   runStream,
   consumeRef,
 }: UseChatQueueDrainParams) {
@@ -178,31 +171,6 @@ export function useChatQueueDrain({
           }
         }
         detachUserQueueItemLocal(sid, task);
-      } else if (task.kind === "async-result") {
-        if (task.jobId) {
-          const finishedJobId = task.jobId;
-          const finishedStatus = task.status ?? "done";
-          const finishedResult = task.asyncResult ?? "";
-          sessionComposeActions.patchAsyncOverlays(sid, (prev) => {
-            const existing = prev.find((o) => o.jobId === finishedJobId);
-            if (!existing) {
-              sessionComposeActions.setActiveQueueTaskId(sid, task.id);
-              return prev;
-            }
-            const updated: ChatQueueItem = {
-              ...existing,
-              id: `run-${finishedJobId}`,
-              kind: "async-result",
-              status: finishedStatus,
-              asyncResult: finishedResult,
-              removeAt: Date.now() + 5000,
-            };
-            sessionComposeActions.setActiveQueueTaskId(sid, updated.id);
-            return prev.map((o) => (o.jobId === finishedJobId ? updated : o));
-          });
-        } else {
-          sessionComposeActions.setActiveQueueTaskId(sid, task.id);
-        }
       }
 
       const streamMessage =
@@ -210,10 +178,9 @@ export function useChatQueueDrain({
         (task.attachments?.length ? "（见附件）" : "");
       const streamAttachments = toApiAttachments(task.attachments);
       const optimisticId = `opt-${task.id}`;
-      const isAsyncResult = task.kind === "async-result";
       const optimisticText = task.text.trim() || (task.attachments?.length ? "（见附件）" : "");
       const optimisticAttachments = streamAttachments?.length ? streamAttachments : undefined;
-      if (!isAsyncResult && (optimisticText || optimisticAttachments)) {
+      if (optimisticText || optimisticAttachments) {
         const existing = sessionComposeStore.get(sid).optimistic;
         if (!existing.some((m) => m.id === optimisticId)) {
           sessionComposeActions.addOptimisticUserBubble(sid, {
@@ -229,25 +196,12 @@ export function useChatQueueDrain({
         attachments: streamAttachments?.length ? streamAttachments : undefined,
         skillId: task.skillId,
         skillPrompt: task.skillPrompt,
-        source: isAsyncResult
-          ? "sub"
-          : task.kind === "child_notify"
-            ? "sub"
-            : "user",
-        toolResults: isAsyncResult
-          ? {
-              subagentResult: {
-                jobId: task.jobId,
-                subagentSessionId: task.subagentSessionId,
-                subagentName: task.subagentName ?? "子 Agent",
-                sourceType: task.sourceType,
-                taskLabel: task.taskLabel,
-              },
-            }
-          : task.kind === "child_notify"
+        source: task.kind === "child_notify" ? "sub" : "user",
+        toolResults:
+          task.kind === "child_notify"
             ? { childNotify: { sourceName: task.sourceName, source: task.source } }
             : undefined,
-        optimisticUser: isAsyncResult ? undefined : { id: optimisticId, text: optimisticText },
+        optimisticUser: { id: optimisticId, text: optimisticText },
         queueItemId: softClaimedDbId ?? task.dbId ?? undefined,
         targetSessionId: sid === NEW_STREAM_KEY ? undefined : sid,
         keepCurrentView,
@@ -268,32 +222,17 @@ export function useChatQueueDrain({
         if (softClaimedDbId) {
           await unclaimSessionQueueItemMutation.mutateAsync({ id: softClaimedDbId }).catch(logQueryCatch);
         }
-        if (task.kind === "user" || task.kind === "child_notify") {
-          restoreUserQueueItem(sid, task);
-          sessionComposeActions.removeOptimisticUserBubble(sid, optimisticId);
-        }
-        if (isAsyncResult && task.jobId) {
-          sessionComposeActions.unmarkDeliveryConsumed(sid, task.jobId);
-        }
+        restoreUserQueueItem(sid, task);
+        sessionComposeActions.removeOptimisticUserBubble(sid, optimisticId);
       } else if (outcome.status === "failed") {
-        // 已起流后失败：不回滚认领（防双发）；async ACK 可 unmark 以便对账重投
-        if (isAsyncResult && task.jobId) {
-          sessionComposeActions.unmarkDeliveryConsumed(sid, task.jobId);
-        }
-        if (!isAsyncResult) {
-          sessionComposeActions.removeOptimisticUserBubble(sid, optimisticId);
-        }
+        // 已起流后失败：不回滚认领（防双发）；乐观气泡清理
+        sessionComposeActions.removeOptimisticUserBubble(sid, optimisticId);
       }
       } catch {
         /* claim / 拼装阶段抛错：回滚软认领 */
         if (softClaimedDbId) {
           await unclaimSessionQueueItemMutation.mutateAsync({ id: softClaimedDbId }).catch(logQueryCatch);
-          if (task.kind === "user" || task.kind === "child_notify") {
-            restoreUserQueueItem(sid, task);
-          }
-        }
-        if (task.kind === "async-result" && task.jobId) {
-          sessionComposeActions.unmarkDeliveryConsumed(sid, task.jobId);
+          restoreUserQueueItem(sid, task);
         }
       } finally {
         // 无论是否起流，必须释放 drain 锁。
@@ -317,9 +256,16 @@ export function useChatQueueDrain({
         }
       }
     })().catch(logQueryCatch);
-  }, [runStream, asyncResultQueue, effectiveSessionId, isSessionRunOccupied, consumeSessionQueueItemMutation, finalizeSessionQueueItemMutation, unclaimSessionQueueItemMutation, ackAsyncDeliveryMutation, utils, asyncQueueQuery, sessionsItems, consumeRef]);
+  }, [runStream, effectiveSessionId, isSessionRunOccupied, consumeSessionQueueItemMutation, finalizeSessionQueueItemMutation, unclaimSessionQueueItemMutation, utils, sessionsItems, consumeRef]);
 
-  /** 优先 preferred，再可见 pane；不扫隐藏 tab（避免后台 tab 抢起流） */
+  /**
+   * 优先 preferred，再可见 pane；不扫隐藏 tab（避免后台 tab 抢起流）。
+   *
+   * 注意：本函数只 drain `userQueue` / `child_notify` / `superior`。
+   * `async-result` 不由前端 drain 消费——真实路径是服务端 `autoConsumeAsyncDelivery`
+   * 认领 Task 后通过 `session_run_started` SSE 触发 `handleSessionRunStarted`，
+   * 前端以 `isResume=true` 直接 `runStream` 起流。因此这里无需探测 async-result。
+   */
   const drainAllPendingQueues = useCallback(
     (preferredSessionId?: string) => {
       const viewSid = effectiveSessionId ?? NEW_STREAM_KEY;
@@ -361,20 +307,11 @@ export function useChatQueueDrain({
             (t.text.trim() || t.attachments?.length)
           );
         });
-        const asyncCandidates =
-          sid === viewSid ? asyncResultQueue : mergeAsyncQueueFromCache(utils, sid);
-        const hasAsync = asyncCandidates.some(
-          (t) =>
-            t.kind === "async-result" &&
-            !t.serverConsumed &&
-            !t.pinned &&
-            (t.text.trim() || t.asyncResult),
-        );
-        if (!hasUser && !hasAsync) continue;
+        if (!hasUser) continue;
         consumeQueue(sid);
       }
     },
-    [consumeQueue, effectiveSessionId, visibleSessionIds, isSessionRunOccupied, asyncResultQueue, utils],
+    [consumeQueue, effectiveSessionId, visibleSessionIds, isSessionRunOccupied],
   );
 
   return { drainAllPendingQueues };
