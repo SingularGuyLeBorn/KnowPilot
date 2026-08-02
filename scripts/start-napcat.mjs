@@ -15,6 +15,15 @@ function configureNapCat() {
     headers: {}
   };
 
+  const httpServerConfig = {
+    enable: true,
+    name: "OasisMind OneBot API",
+    host: "127.0.0.1",
+    port: 3001,
+    token: "",
+    enableCors: true
+  };
+
   const files = fs.readdirSync(configDir);
   let configuredCount = 0;
 
@@ -25,15 +34,22 @@ function configureNapCat() {
         const content = JSON.parse(fs.readFileSync(fullPath, "utf8"));
         if (!content.network) content.network = {};
         if (!Array.isArray(content.network.httpClients)) content.network.httpClients = [];
+        if (!Array.isArray(content.network.httpServers)) content.network.httpServers = [];
 
-        const exists = content.network.httpClients.some((c) => c.url?.includes("/api/webhooks/onebot"));
-        if (!exists) {
+        // 配置 HTTP 反向 Webhook
+        const webhookExists = content.network.httpClients.some((c) => c.url?.includes("/api/webhooks/onebot"));
+        if (!webhookExists) {
           content.network.httpClients.push(webhookConfig);
-          fs.writeFileSync(fullPath, JSON.stringify(content, null, 2), "utf8");
-          console.log(`✅ 已自动为您配置 Webhook 到 ${f}`);
-        } else {
-          console.log(`ℹ️ ${f} 已包含 OasisMind Webhook 配置`);
         }
+
+        // 配置 HTTP API 服务端 (端口 3001，避免 3000 Next.js 冲突)
+        const serverExists = content.network.httpServers.some((s) => s.port === 3001);
+        if (!serverExists) {
+          content.network.httpServers.push(httpServerConfig);
+        }
+
+        fs.writeFileSync(fullPath, JSON.stringify(content, null, 2), "utf8");
+        console.log(`✅ 已自动配置并同步 OneBot 端口 (3001) 与 Webhook 到 ${f}`);
         configuredCount++;
       } catch (e) {
         console.error(`解析 ${f} 失败:`, e);
@@ -45,7 +61,7 @@ function configureNapCat() {
     const defaultPath = path.join(configDir, "onebot11.json");
     const defaultData = {
       network: {
-        httpServers: [],
+        httpServers: [httpServerConfig],
         httpSseServers: [],
         httpClients: [webhookConfig],
         websocketServers: [],
@@ -54,12 +70,12 @@ function configureNapCat() {
       }
     };
     fs.writeFileSync(defaultPath, JSON.stringify(defaultData, null, 2), "utf8");
-    console.log("✅ 已为您自动创建默认 onebot11.json 并写入 OasisMind Webhook 端口");
+    console.log("✅ 已为您自动创建默认 onebot11.json (API: 3001, Webhook: 3010)");
   }
 }
 
 async function main() {
-  console.log("⚙️ 自动校验并写入 OasisMind QQ Webhook 监听配置...");
+  console.log("⚙️ 自动校验与配置 OneBot 闭环通信 (API 3001 ↔ Webhook 3010)...");
   configureNapCat();
 
   const qqExe = "D:\\Program Files\\Tencent\\QQNT\\QQ.exe";
@@ -67,7 +83,7 @@ async function main() {
   const cjsPath = path.resolve("tools/napcat_framework/nativeLoader.cjs");
   const exePath = path.resolve("tools/napcat_framework/napimain.exe");
 
-  console.log("🚀 启动 NapCat Framework 独立后台守护程序...");
+  console.log("🚀 重新启动 NapCat Framework 守护引擎...");
 
   const logFile = path.resolve("tools/napcat_framework/napcat.log");
   const outFd = fs.openSync(logFile, "a");
@@ -79,9 +95,7 @@ async function main() {
   });
 
   child.unref();
-  console.log("\n🎉 【全自动打通成功】NapCatQQ 守护服务已在后台持久化运行！");
-  console.log("👉 已为您自动写入 Webhook 反向推送地址: http://localhost:3010/api/webhooks/onebot");
-  console.log("👉 您无需手动操作任何网页配置，也不必打开任何控制台页面！");
+  console.log("\n🎉 【全自动闭环成功】NapCat HTTP API 已启用端口 3001，Webhook 反向绑定 3010！");
 }
 
 main().catch((err) => {
