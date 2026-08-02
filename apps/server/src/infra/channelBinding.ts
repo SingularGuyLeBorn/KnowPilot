@@ -58,18 +58,23 @@ export async function resolveOrCreateChannelBinding(
     peerId: string;
     chatId?: string | null;
     agentId?: string;
+    /** 若传入，强制用此 chatId 作绑定 key（即创建新 Session），忽略现有绑定 */
+    forceChatId?: string;
   },
 ): Promise<ChannelBindingRow> {
-  const chatId = input.chatId?.trim() || "";
-  const existing = await prisma.channelBinding.findUnique({
-    where: {
-      channel_peerId_chatId: {
-        channel: input.channel,
-        peerId: input.peerId,
-        chatId,
-      },
-    },
-  });
+  const chatId = input.forceChatId?.trim() || input.chatId?.trim() || "";
+  const existing = !input.forceChatId
+    ? await prisma.channelBinding.findUnique({
+        where: {
+          channel_peerId_chatId: {
+            channel: input.channel,
+            peerId: input.peerId,
+            chatId,
+          },
+        },
+      })
+    : null; // forceChatId 时跳过查找，直接创建新 Session
+
   if (existing) {
     await prisma.channelBinding.update({
       where: { id: existing.id },
@@ -90,12 +95,13 @@ export async function resolveOrCreateChannelBinding(
     resolved = await resolveDefaultAgentId(prisma);
   }
 
-  const title = `IM · ${input.channel} · ${input.peerId.slice(0, 12)}`;
+  const title = chatId
+    ? `IM · ${input.channel} · ${input.peerId.slice(0, 12)} · ${chatId.slice(0, 20)}`
+    : `IM · ${input.channel} · ${input.peerId.slice(0, 12)}`;
   const model = resolved.model || config.llm.defaultModel || DEFAULT_LLM_MODEL;
   const dedicated = await prisma.chatSession.create({
     data: {
       title,
-      // 侧栏/标签优先读 autoName；无首轮自动命名前也要可读
       autoName: title,
       model,
       agentId: resolved.id,

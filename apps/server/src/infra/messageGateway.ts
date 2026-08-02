@@ -108,8 +108,19 @@ export function initMessageGateway(next: GatewayDeps): void {
  */
 export async function handleIncomingMessage(msg: UnifiedMessage): Promise<GatewayHandleResult> {
   if (!deps) return { ok: false, error: "MessageGateway 未初始化" };
-  const text = msg.payload.text?.trim();
+  let text = msg.payload.text?.trim();
   if (!text) return { ok: false, error: "空消息" };
+
+  // 检测「新话题」指令：/new [主题名] 或 /新话题 [主题名]
+  const newTopicMatch = text.match(/^\/(?:new|新话题|newtopic|换话题)\s*(.*)/i);
+  let forceChatId: string | undefined;
+  if (newTopicMatch) {
+    const topicLabel = newTopicMatch[1]?.trim();
+    // chatId = 时间戳前缀 + 用户指定的主题名（截断 30 字）
+    forceChatId = `${Date.now()}-${(topicLabel || "新话题").slice(0, 30)}`;
+    // 把主题名作为第一条消息内容（若有）；否则用「开始新话题」
+    text = topicLabel || "我们开始一个新话题。";
+  }
 
   stats.received += 1;
   const eventId = `${msg.envelope.channel}:${msg.meta.eventId}`;
@@ -124,6 +135,7 @@ export async function handleIncomingMessage(msg: UnifiedMessage): Promise<Gatewa
       channel: msg.envelope.channel,
       peerId: msg.envelope.peerId,
       chatId: msg.envelope.chatId ?? null,
+      forceChatId,
     });
 
     const hub = getStreamHub();
