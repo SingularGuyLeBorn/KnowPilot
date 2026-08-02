@@ -129,7 +129,7 @@ const EMPTY_FORM: AgentForm = {
   name: "",
   description: "",
   model: DEFAULT_LLM_MODEL,
-  systemPrompt: "你是 KnowPilot 智能助手，擅长知识管理与 Markdown 写作。",
+  systemPrompt: "你是 OasisMind (见微) 智能助手，擅长知识管理与 Markdown 写作。",
   tools: [...DEFAULT_AGENT_TOOLS],
   heartbeatEnabled: false,
   heartbeatCron: "0 9 * * *",

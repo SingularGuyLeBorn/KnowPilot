@@ -4,7 +4,7 @@ description: 微信/网页文章 → 本地材料包 → beats 分镜 → Remoti
 kind: procedural
 enabled: true
 version: "0.1.0"
-author: KnowPilot
+author: OasisMind
 origin: "灵感 video-skills-toolkit / wechat-article-remotion；https://mp.weixin.qq.com/s/YqnCTo8F6k2EbX3jD0icPg ；https://github.com/liangdabiao/video-skills-toolkit"
 ---
 

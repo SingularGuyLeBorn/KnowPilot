@@ -38,7 +38,7 @@ export default function SearchPage() {
     <div className="flex-1 overflow-y-auto bg-[var(--kp-bg)] p-6 md:p-8 space-y-6">
       <PageHeader
         icon={Search}
-        title="搜索 KnowPilot"
+        title="搜索 OasisMind"
       />
       <div className="relative max-w-xl">
         <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--kp-text-3)]" />

@@ -130,7 +130,7 @@ describe("W9 initSwarm 首次启动与幂等", () => {
     const supers = await prisma.agent.findMany({ where: { tier: "super", status: { not: "deleted" } } });
     expect(supers.length).toBe(1);
     const superAgent = supers[0];
-    expect(superAgent.name).toBe("KnowPilot 超级 Agent");
+    expect(superAgent.name).toBe("OasisMind 超级 Agent");
     expect(superAgent.workspaceId).toBe(systemWs!.id);
     const tools = superAgent.tools.split(",");
     for (const required of TIER_DEFAULT_TOOLS.super) {
@@ -150,7 +150,7 @@ describe("W9 initSwarm 首次启动与幂等", () => {
       where: { isSystem: true, systemType: "assistant", status: { not: "deleted" } },
     });
     expect(assistantHome).toBeTruthy();
-    expect(assistantHome!.name).toBe("KnowPilot Assistant");
+    expect(assistantHome!.name).toBe("OasisMind Assistant");
 
     // 幂等：重复执行不产生重复 Agent / Workspace
     await initSwarm(prisma, services, config);

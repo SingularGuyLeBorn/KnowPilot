@@ -4,12 +4,12 @@ description: 创建与维护主题知识库：建库、深度长文、站内链�
 kind: procedural
 enabled: true
 version: "0.2.0"
-author: KnowPilot
+author: OasisMind
 ---
 
-# knowledge-garden — KnowPilot 主题知识库
+# knowledge-garden — OasisMind 主题知识库
 
-灵感来自 Karpathy llm-wiki（编译一次、持续维护），**必须用 KnowPilot 原生能力**落地，禁止按 Obsidian/`raw`/`wiki` 目录或上游 bash 脚本操作。
+灵感来自 Karpathy llm-wiki（编译一次、持续维护），**必须用 OasisMind 原生能力**落地，禁止按 Obsidian/`raw`/`wiki` 目录或上游 bash 脚本操作。
 
 参考（勿直接跑）：`tmp/upstream-skills/trending-skills/skills/llm-wiki-skill/`、`references/upstream.md`。
 
@@ -29,7 +29,7 @@ author: KnowPilot
 4. **禁止**把「相关」写成裸 `[[01-foo/bar]]` 且无标题——用户在所见即所得编辑器里会看到路径灰块且难读。
 5. 过夜 Goal：机器与 `pnpm dev` 须保持运行（重启不自动续跑）。
 
-## KnowPilot Markdown 约定（必读）
+## OasisMind Markdown 约定（必读）
 
 | 用途 | 正确写法 | 错误 |
 |------|----------|------|

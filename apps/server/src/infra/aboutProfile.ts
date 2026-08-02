@@ -64,7 +64,7 @@ export function loadAboutProfile(): AboutProfile {
   const { data, body } = parseFrontmatter(raw);
 
   return {
-    name: data.name || "KnowPilot",
+    name: data.name || "OasisMind",
     title: data.title || "Creator",
     tagline: data.tagline || "",
     location: data.location || "",

@@ -37,16 +37,16 @@ function mergeMissingSuperTools(existingTools: string): { tools: string; added: 
   return { tools: current.join(","), added };
 }
 
-const SUPER_AGENT_NAME = "KnowPilot 超级 Agent";
+const SUPER_AGENT_NAME = "OasisMind 超级 Agent";
 /** Root Workspace：超级 Agent 归属 */
-const SYSTEM_WORKSPACE_NAME = "KnowPilot Root";
+const SYSTEM_WORKSPACE_NAME = "OasisMind Root";
 const SYSTEM_WORKSPACE_PATH = "workspaces/__system__";
 export const SYSTEM_WORKSPACE_TYPE_SUPER = "super";
 /** Root 不限本空间槽（仍受全局 maxConcurrent）；业务空间默认 2 */
 const ROOT_ASYNC_SLOT_QUOTA = 0;
 
 /** 默认 assistant 的家 */
-export const ASSISTANT_HOME_NAME = "KnowPilot Assistant";
+export const ASSISTANT_HOME_NAME = "OasisMind Assistant";
 const ASSISTANT_HOME_PATH = "workspaces/__assistant__";
 export const SYSTEM_WORKSPACE_TYPE_ASSISTANT = "assistant";
 const ASSISTANT_HOME_ASYNC_SLOT_QUOTA = 2;
@@ -87,7 +87,7 @@ async function ensureSystemWorkspace(prisma: PrismaClient, config: AppConfig): P
   const created = await prisma.workspace.create({
     data: {
       name: SYSTEM_WORKSPACE_NAME,
-      description: "KnowPilot Root Workspace：超级 Agent 归属；全局编排与跨空间协调从这里发生。",
+      description: "OasisMind Root Workspace：超级 Agent 归属；全局编排与跨空间协调从这里发生。",
       path: SYSTEM_WORKSPACE_PATH,
       isSystem: true,
       systemType: SYSTEM_WORKSPACE_TYPE_SUPER,
@@ -133,7 +133,7 @@ export async function ensureAssistantWorkspace(
     data: {
       name: ASSISTANT_HOME_NAME,
       description:
-        "KnowPilot Assistant Home：默认助手归属。可重置会话与助手配置；不可删除。长期记忆与 pinned 不受重置影响。",
+        "OasisMind Assistant Home：默认助手归属。可重置会话与助手配置；不可删除。长期记忆与 pinned 不受重置影响。",
       path: ASSISTANT_HOME_PATH,
       isSystem: true,
       systemType: SYSTEM_WORKSPACE_TYPE_ASSISTANT,
@@ -250,7 +250,7 @@ export async function resetAssistantHome(
       systemPrompt: DEFAULT_ASSISTANT_SYSTEM_PROMPT,
       tier: "manager",
       workspaceId,
-      description: "KnowPilot 默认助手",
+      description: "OasisMind 默认助手",
     });
   } else {
     await prisma.agent.update({
@@ -260,7 +260,7 @@ export async function resetAssistantHome(
         systemPrompt: DEFAULT_ASSISTANT_SYSTEM_PROMPT,
         tier: "manager",
         workspaceId,
-        description: "KnowPilot 默认助手",
+        description: "OasisMind 默认助手",
       },
     });
   }

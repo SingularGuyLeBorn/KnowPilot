@@ -196,7 +196,7 @@ async function seedAssistantManager(serverPort) {
     parentId: superAgent.id,
     workspaceId: defaultWorkspace?.id,
     model: "deepseek-chat",
-    systemPrompt: "你是 KnowPilot 默认助手，可以调用 spawn_subagent / async_task_run / sleep / read_article / web_search 等工具完成任务。",
+    systemPrompt: "你是 OasisMind (见微) 默认助手，可以调用 spawn_subagent / async_task_run / sleep / read_article / web_search 等工具完成任务。",
     tools: ["native:spawn_subagent", "native:async_task_run", "native:async_task_status", "native:async_task_cancel", "native:sleep", "native:read_article", "native:web_search"],
     source: "e2e-seed",
   });

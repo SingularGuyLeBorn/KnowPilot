@@ -71,19 +71,19 @@ export async function createSessionWithToolHints(): Promise<ToolHintSessionFixtu
   await trpcMutate<ApiResult<{ id: string }>>("message.create", {
     sessionId,
     role: "user",
-    content: "搜索 KnowPilot 并一句话介绍",
+    content: "搜索 OasisMind 并一句话介绍",
   });
 
   const toolCalls = [
     {
       id: "call_fixture_web_search",
       name: "web_search",
-      args: { query: "KnowPilot" },
+      args: { query: "OasisMind" },
       result: {
         elapsedMs: 88,
         engine: "tavily",
         searchPhase: "smart-search",
-        query: "KnowPilot",
+        query: "OasisMind",
         total: 3,
       },
       kind: "tool",
@@ -93,14 +93,14 @@ export async function createSessionWithToolHints(): Promise<ToolHintSessionFixtu
   await trpcMutate<ApiResult<{ id: string }>>("message.create", {
     sessionId,
     role: "assistant",
-    content: "KnowPilot 是本地优先的知识管理与 Agent 平台。",
+    content: "OasisMind 是本地优先的知识管理与 Agent 平台。",
     toolCalls,
     toolResults: {
       versionMeta: {
         versions: [
           {
             id: `v_${Date.now()}`,
-            content: "KnowPilot 是本地优先的知识管理与 Agent 平台。",
+            content: "OasisMind 是本地优先的知识管理与 Agent 平台。",
             toolCalls,
             createdAt: new Date().toISOString(),
           },

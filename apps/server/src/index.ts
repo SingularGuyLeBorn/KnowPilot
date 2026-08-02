@@ -526,7 +526,7 @@ try {
 // 启动（默认 127.0.0.1；Docker 等设 SERVER_HOST=0.0.0.0）
 const server = app.listen(PORT, HOST, () => {
   const origin = HOST === "0.0.0.0" || HOST === "::" ? `http://localhost:${PORT}` : `http://${HOST}:${PORT}`;
-  console.log(`\n  🚀 KnowPilot Server listening on ${HOST}:${PORT}`);
+  console.log(`\n  🚀 OasisMind Server listening on ${HOST}:${PORT}`);
   console.log(`  📡 tRPC endpoint: ${origin}/api/trpc`);
   console.log(`  💚 Health check:  ${origin}/health\n`);
 

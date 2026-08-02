@@ -17,10 +17,10 @@ test.describe("Chat 真实 LLM — 工具时间线摘要", () => {
       .toBe(true);
   });
 
-  test("让 assistant 搜索 KnowPilot 后显示 web_search 工具 pill 与 hint", async ({ page }) => {
+  test("让 assistant 搜索 OasisMind 后显示 web_search 工具 pill 与 hint", async ({ page }) => {
     await waitForChatReady(page);
 
-    await sendChatMessage(page, "请使用 web_search 工具搜索 KnowPilot，并用一句话介绍它。");
+    await sendChatMessage(page, "请使用 web_search 工具搜索 OasisMind，并用一句话介绍它。");
 
     // 等待工具 pill 出现
     const toolPill = page.getByTestId("tool-pill").filter({ hasText: /web_search|搜索/ });

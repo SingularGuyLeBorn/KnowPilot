@@ -6,7 +6,7 @@ description: >-
 kind: procedural
 enabled: true
 version: "0.3.0"
-author: KnowPilot
+author: OasisMind
 ---
 
 # algo-viz — 算法可视化（见微）

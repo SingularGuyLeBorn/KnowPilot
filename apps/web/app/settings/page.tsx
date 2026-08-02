@@ -266,7 +266,7 @@ export default function SettingsPage() {
                 Google / GitHub；Include 规则收紧到你自己的邮箱。
               </li>
               <li>
-                用无痕窗口打开公网 URL：应先出现 Cloudflare 登录墙，再进入 KnowPilot{" "}
+                用无痕窗口打开公网 URL：应先出现 Cloudflare 登录墙，再进入 OasisMind{" "}
                 <code className="rounded bg-black/5 px-1 font-mono">/login</code>（若已开
                 AUTH）。
               </li>

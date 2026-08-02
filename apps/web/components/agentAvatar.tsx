@@ -197,7 +197,7 @@ export const AgentAvatar = memo(function AgentAvatar({
   className,
   shape = "circle",
 }: AgentAvatarProps) {
-  const idx = index ?? (id ? avatarIndexForId(id) : avatarIndexForName(name ?? "KnowPilot"));
+  const idx = index ?? (id ? avatarIndexForId(id) : avatarIndexForName(name ?? "OasisMind"));
   const { palette, motif } = presetOf(idx);
   const Motif = MOTIFS[motif];
   const gid = nextUid();

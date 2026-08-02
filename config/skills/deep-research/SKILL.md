@@ -6,7 +6,7 @@ trigger: "/deep-research"
 enabled: true
 kind: procedural
 ---
-# Deep Research（KnowPilot 精简版）
+# Deep Research（OasisMind 精简版）
 
 陪伴创作的调研流程：先想清楚问什么，再搜网页与文献，交叉验证后落盘成 Markdown。
 

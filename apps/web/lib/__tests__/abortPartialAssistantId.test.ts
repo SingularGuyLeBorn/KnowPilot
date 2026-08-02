@@ -40,7 +40,7 @@ describe("E3 abort partialAssistantMessageId（无计时器）", () => {
     expect(streamLifecycleStore.get(SID).phase).toBe("done");
     expect(streamLifecycleStore.get(SID).pendingAssistantMessageId).toBe("msg-partial-e3");
 
-    vi.advanceTimersByTime(2500);
+    vi.advanceTimersByTime(1000);
     expect(streamLifecycleStore.get(SID).phase).toBe("done");
     expect(streamLifecycleStore.get(SID).streamingContent).toBe("partial-text");
 

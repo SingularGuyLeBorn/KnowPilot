@@ -19,14 +19,14 @@ test.describe("Chat Mock — 工具调用与回答", () => {
 
   test("触发 web_search 工具并显示 pill/hint", async ({ page }) => {
     await waitForChatReady(page);
-    await sendChatMessage(page, "搜索 KnowPilot 并一句话介绍");
+    await sendChatMessage(page, "搜索 OasisMind 并一句话介绍");
     await waitForStreamingComplete(page);
 
     expect(await countAssistantMessages(page)).toBe(1);
     await expectToolPill(page, "web_search");
     // Mock native 工具后，hint 含 "mock" 引擎与耗时，不再含 tavily
     await expectToolHint(page, "mock");
-    await expectAssistantAnswer(page, "KnowPilot 是一个本地优先");
+    await expectAssistantAnswer(page, "OasisMind 是一个本地优先");
   });
 
   test("普通问候不触发工具", async ({ page }) => {

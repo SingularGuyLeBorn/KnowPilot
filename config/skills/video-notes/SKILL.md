@@ -4,7 +4,7 @@ description: 视频链接做笔记：优先字幕，否则本地下音频 + Whis
 kind: procedural
 enabled: true
 version: "0.1.0"
-author: KnowPilot
+author: OasisMind
 ---
 
 # video-notes — 视频 → 逐字稿 → 文章

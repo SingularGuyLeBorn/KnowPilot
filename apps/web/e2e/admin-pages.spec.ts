@@ -17,7 +17,7 @@ const ADMIN_PAGES: Array<{ path: string; heading: string }> = [
   { path: "/tasks", heading: "Tasks 定时任务" },
   { path: "/logs", heading: "控制台与系统日志" },
   { path: "/workspaces", heading: "Workspaces 工作空间" },
-  { path: "/search", heading: "搜索 KnowPilot" },
+  { path: "/search", heading: "搜索 OasisMind" },
   { path: "/dashboard", heading: "Analytics 概览" },
   { path: "/tools", heading: "Tools 工具目录" },
   { path: "/sources", heading: "信息源管理" },

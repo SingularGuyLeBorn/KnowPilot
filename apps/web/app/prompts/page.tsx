@@ -30,7 +30,7 @@ export default function PromptsPage() {
       description: "Agent 系统提示词模板示例",
       variables: ["userName", "context"],
       tags: ["system", "chat"],
-      content: "你是 KnowPilot 助手。用户 {{userName}} 的上下文：{{context}}\n\n请用简洁中文回答。",
+      content: "你是 OasisMind (见微) 智能助手。用户 {{userName}} 的上下文：{{context}}\n\n请用简洁中文回答。",
     });
   };
 

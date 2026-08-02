@@ -1,6 +1,6 @@
 ---
 name: "assistant"
-description: "KnowPilot 默认助手"
+description: "OasisMind 默认助手"
 model: "deepseek-v4-flash"
 tier: "manager"
 tools:

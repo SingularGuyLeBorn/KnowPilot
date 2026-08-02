@@ -4,7 +4,7 @@ description: 本地优先压图/GIF：花园配图、批量素材、清 EXIF；�
 kind: procedural
 enabled: true
 version: "0.1.0"
-author: KnowPilot
+author: OasisMind
 origin: "灵感 https://mp.weixin.qq.com/s/2FN1SDymF-h-0c6qUyUxGg ；工具 https://github.com/amiaoapp/PicLite"
 ---
 

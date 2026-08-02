@@ -24,7 +24,7 @@ const ASSISTANT_HOME_SYSTEM_TYPE = "assistant";
 /** 默认 assistant 工具清单单点定义在 shared（ASSISTANT_DEFAULT_TOOLS），此处不再另维护一份 */
 
 /** 默认 assistant 系统提示（Markdown 分段；工具 id 仍为 snake_case 供模型调用） */
-export const DEFAULT_ASSISTANT_SYSTEM_PROMPT = `你是 KnowPilot 智能助手，可以阅读本地 Markdown 知识库、搜索网络、抓取网页、操作 Git、调用 Skill 与 MCP 工具。回答请简洁、准确，优先使用工具获取事实。
+export const DEFAULT_ASSISTANT_SYSTEM_PROMPT = `你是 OasisMind (见微) 智能助手，可以阅读本地 Markdown 知识库、搜索网络、抓取网页、操作 Git、调用 Skill 与 MCP 工具。回答请简洁、准确，优先使用工具获取事实。
 
 ## 任务编排
 - 多步骤研究、耗时较长或需并行时，用 \`native:spawn_subagent\` 派生子代理。
@@ -71,7 +71,7 @@ export const DEFAULT_ASSISTANT_SYSTEM_PROMPT = `你是 KnowPilot 智能助手，
 - 查登录态用 \`native:browser_login_status\`（返 storageState / cookie 条数，不弹窗）。`;
 
 const OUTDATED_ASSISTANT_SYSTEM_PROMPT =
-  "你是 KnowPilot 智能助手，可以阅读本地 Markdown 知识库、搜索网络、抓取网页、操作 Git、调用 Skill 与 MCP 工具。回答请简洁、准确，优先使用工具获取事实。";
+  "你是 OasisMind (见微) 智能助手，可以阅读本地 Markdown 知识库、搜索网络、抓取网页、操作 Git、调用 Skill 与 MCP 工具。回答请简洁、准确，优先使用工具获取事实。";
 
 /** 漂移修复指引（drift 提示中引用；原一次性迁移脚本已执行并退役） */
 export const ASSISTANT_MIGRATION_HINT =
@@ -99,7 +99,7 @@ export function detectAssistantDrift(agent: AgentEntity): string[] {
   if (!agent.systemPrompt || agent.systemPrompt === OUTDATED_ASSISTANT_SYSTEM_PROMPT) {
     drift.push("系统提示为空或为旧版默认");
   } else if (
-    agent.systemPrompt.startsWith("你是 KnowPilot 智能助手") &&
+    (agent.systemPrompt.startsWith("你是 KnowPilot 智能助手") || agent.systemPrompt.startsWith("你是 OasisMind (见微) 智能助手")) &&
     !agent.systemPrompt.includes("garden_create")
   ) {
     // 仍是内置默认身份、但缺动态花园指引（功能新增后未跑迁移）
@@ -158,7 +158,7 @@ export async function resolveAgent(services: ServiceContainer, agentId?: string)
   const homeId = await findAssistantHomeId(services);
   const created = await services.agent.create({
     name: "assistant",
-    description: "KnowPilot 默认助手",
+    description: "OasisMind 默认助手",
     model: getAppConfig().llm.defaultModel,
     systemPrompt: DEFAULT_ASSISTANT_SYSTEM_PROMPT,
     tools: ASSISTANT_DEFAULT_TOOLS,

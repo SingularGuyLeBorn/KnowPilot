@@ -129,7 +129,7 @@ export default function GitPage() {
       return;
     }
     createMutation.mutate({
-      name: "KnowPilot",
+      name: "OasisMind",
       path: ".",
       branch: "main",
     });

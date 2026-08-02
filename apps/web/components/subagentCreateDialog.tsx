@@ -300,7 +300,7 @@ export function SubagentCreateDialog({
                   onChange={(e) => setTask(e.target.value)}
                   rows={4}
                   autoFocus
-                  placeholder="例如：搜索 KnowPilot 并整理成 200 字摘要"
+                  placeholder="例如：搜索 OasisMind 并整理成 200 字摘要"
                   className="w-full resize-none rounded-xl border border-[var(--kp-divider)] bg-[var(--kp-bg)] px-3 py-2 text-xs leading-relaxed text-[var(--kp-text-1)] outline-none focus:border-[var(--kp-brand)]"
                 />
               </div>
