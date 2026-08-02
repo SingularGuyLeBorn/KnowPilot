@@ -1,6 +1,32 @@
 import fs from "fs";
 import path from "path";
 import { spawn, execSync } from "child_process";
+import { fileURLToPath } from "url";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const projectRoot = path.resolve(__dirname, "..");
+
+/** 独立运行脚本时也需加载根目录 .env；已存在环境变量不覆盖。 */
+function loadRootEnv() {
+  const envPath = path.join(projectRoot, ".env");
+  if (!fs.existsSync(envPath)) return;
+  const content = fs.readFileSync(envPath, "utf8");
+  for (const rawLine of content.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith("#")) continue;
+    const idx = line.indexOf("=");
+    if (idx === -1) continue;
+    const key = line.slice(0, idx).trim();
+    let value = line.slice(idx + 1).trim();
+    if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+      value = value.slice(1, -1);
+    }
+    if (process.env[key] === undefined) {
+      process.env[key] = value;
+    }
+  }
+}
+loadRootEnv();
 
 const QQ_ACCOUNT = (process.env.ONEBOT_QQ_ACCOUNT || "").trim();
 const QQ_PASSWORD = (process.env.ONEBOT_QQ_PASSWORD || "").trim();

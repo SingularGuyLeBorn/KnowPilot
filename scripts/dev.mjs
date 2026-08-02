@@ -15,6 +15,32 @@ import { fileURLToPath } from "url";
 import { promisify } from "util";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+
+/** 开发编排脚本先于任何 pnpm 子进程运行，需先加载根目录 .env，
+ *  否则 ONEBOT_QQ_ACCOUNT 等配置无法被 dev.mjs 自身读取（子进程也继承不到）。
+ *  行为对齐 server 的 loadRootEnv：已存在的环境变量不覆盖。 */
+function loadRootEnv() {
+  const envPath = path.join(root, ".env");
+  if (!fs.existsSync(envPath)) return;
+  const content = fs.readFileSync(envPath, "utf8");
+  for (const rawLine of content.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith("#")) continue;
+    const idx = line.indexOf("=");
+    if (idx === -1) continue;
+    const key = line.slice(0, idx).trim();
+    let value = line.slice(idx + 1).trim();
+    // 去除单/双引号包裹（与 dotenv 一致）
+    if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+      value = value.slice(1, -1);
+    }
+    if (process.env[key] === undefined) {
+      process.env[key] = value;
+    }
+  }
+}
+loadRootEnv();
+
 const healthUrl = process.env.SERVER_INTERNAL_URL
   ? `${process.env.SERVER_INTERNAL_URL.replace(/\/$/, "")}/health`
   : "http://127.0.0.1:3010/health";
