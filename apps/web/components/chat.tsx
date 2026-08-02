@@ -270,10 +270,19 @@ export function ChatView() {
     [effectiveSessionId, hydrateFromServer, utils.message.listForChat],
   );
 
-  const { data: sessionDetail, refetch: refetchSession } = trpc.session.getById.useQuery(
+  const { data: sessionDetail, refetch: refetchSession, error: sessionError } = trpc.session.getById.useQuery(
     { id: effectiveSessionId! },
     { enabled: !!effectiveSessionId },
   );
+
+  // 当 URL/Tab 中的会话已从 DB 清理/删除时，自动关闭该失效标签并切至有效会话或新对话
+  useEffect(() => {
+    if (!effectiveSessionId) return;
+    if (sessionError && sessionError.data?.code === "NOT_FOUND") {
+      closeTab(effectiveSessionId);
+    }
+  }, [effectiveSessionId, sessionError, closeTab]);
+
   // 当前会话是否为子代理「任务」会话（用于任务条 / 父会话锚点等）。
   // 只用 kind / parentSessionId，不要用 Agent.tier===sub 兜底——
   // 否则子 Agent 的「主会话」也会被当成任务会话，并和标签页状态纠缠。
