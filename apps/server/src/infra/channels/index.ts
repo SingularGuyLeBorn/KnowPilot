@@ -13,6 +13,7 @@ import {
 } from "../messageGateway.js";
 import { createQqOfficialBotAdapter, loadQqBotConfigFromEnv } from "./qqOfficialBot.js";
 import { createFeishuBotAdapter, loadFeishuBotConfigFromEnv } from "./feishuBot.js";
+import { createOneBotAdapter, loadOneBotConfigFromEnv } from "./onebotBot.js";
 
 export async function bootstrapMessageChannels(opts: {
   prisma: PrismaClient;
@@ -22,6 +23,7 @@ export async function bootstrapMessageChannels(opts: {
   initMessageGateway(opts);
   registerChannelAdapter(createQqOfficialBotAdapter(loadQqBotConfigFromEnv()));
   registerChannelAdapter(createFeishuBotAdapter(loadFeishuBotConfigFromEnv()));
+  registerChannelAdapter(createOneBotAdapter(loadOneBotConfigFromEnv()));
   await startAllChannelAdapters();
 }
 

@@ -258,6 +258,34 @@ app.post("/api/webhooks/qq", async (req, res) => {
   }
 });
 
+// OneBot v11 (NapCatQQ / LLOneBot) 反向 HTTP Webhook
+app.post("/api/webhooks/onebot", async (req, res) => {
+  try {
+    const { getChannelAdapter } = await import("./infra/messageGateway.js");
+    const { getOneBotAdapterIngest } = await import("./infra/channels/onebotBot.js");
+    const adapter = getChannelAdapter("onebot");
+    if (!adapter?.enabled) {
+      res.status(503).json({ error: "OneBot 渠道未启用（需设 ONEBOT_HTTP_URL 或 ONEBOT_ENABLED=true）" });
+      return;
+    }
+    const ingest = getOneBotAdapterIngest(adapter);
+    if (!ingest) {
+      res.status(500).json({ error: "OneBot adapter 无 ingest" });
+      return;
+    }
+    res.status(202).json({ ok: true });
+    const signature = String(req.headers["x-signature"] ?? "");
+    const rawBody = (req as express.Request & { rawBody?: Buffer }).rawBody;
+    const result = ingest(req.body, rawBody, signature);
+    if (!result.ok) {
+      console.warn(`[onebot webhook] 忽略: ${result.error}`);
+    }
+  } catch (err) {
+    console.error("[onebot webhook]", err);
+    if (!res.headersSent) res.status(500).json({ error: "internal" });
+  }
+});
+
 // 飞书机器人事件订阅（URL 验证 + im.message.receive_v1）
 // 飞书后台 → 事件订阅 → 请求地址 https://<公网>/api/webhooks/feishu
 app.post("/api/webhooks/feishu", async (req, res) => {

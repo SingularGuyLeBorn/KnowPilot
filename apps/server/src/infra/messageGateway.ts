@@ -16,7 +16,7 @@ import { getStreamHub } from "./sessionStreamHub.js";
 import { createTrpcInvoker } from "./trpcInvoker.js";
 import { wrapEmitForChannelReply } from "./channelStreamBridge.js";
 
-export type ImChannel = "qq" | "feishu" | "telegram";
+export type ImChannel = "qq" | "feishu" | "telegram" | "onebot";
 
 export type UnifiedMessage = {
   envelope: {
