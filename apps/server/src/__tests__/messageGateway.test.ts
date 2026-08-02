@@ -1,4 +1,4 @@
-import { describe, expect, it, beforeEach, vi } from "vitest";
+import { describe, expect, it, beforeEach, afterEach, vi } from "vitest";
 import {
   __resetMessageGatewayForTests,
   handleIncomingMessage,
@@ -8,6 +8,10 @@ import {
   type UnifiedMessage,
 } from "../infra/messageGateway.js";
 import { wrapEmitForChannelReply } from "../infra/channelStreamBridge.js";
+import { prisma } from "../db.js";
+import { SessionStreamHub, setStreamHub } from "../infra/sessionStreamHub.js";
+import { createContextInner } from "../trpc/context.js";
+import { createTestConfig } from "./helpers/toolTestFixtures.js";
 
 describe("channelStreamBridge", () => {
   it("token 节流 + done 终稿", async () => {
@@ -110,5 +114,116 @@ describe("UnifiedMessage 形状", () => {
       meta: { eventId: "id", replyTo: "req" },
     };
     expect(msg.envelope.channel).toBe("qq");
+  });
+});
+
+describe("messageGateway /stop 指令", () => {
+  let hub: SessionStreamHub;
+  let ctx: Awaited<ReturnType<typeof createContextInner>>;
+  const replies: string[] = [];
+  let adapter: ChannelAdapter;
+  let agentId: string;
+
+  beforeEach(async () => {
+    await __resetMessageGatewayForTests();
+    replies.length = 0;
+    hub = new SessionStreamHub({
+      persist: false,
+      cleanupIntervalMs: 0,
+      eventTtlMs: 1000,
+      runTimeoutMs: 300_000,
+      runStallTimeoutMs: 120_000,
+    });
+    setStreamHub(hub);
+    ctx = await createContextInner();
+    const agent = await prisma.agent.create({
+      data: { name: "assistant", sourceSlug: "assistant", model: "test" },
+    });
+    agentId = agent.id;
+    adapter = {
+      channel: "qq",
+      name: "mock",
+      enabled: true,
+      getStatus: () => ({ state: "connected" }),
+      start: async () => {},
+      stop: async () => {},
+      reply: async (_msg, chunk) => {
+        replies.push(chunk.text);
+      },
+    };
+    registerChannelAdapter(adapter);
+    initMessageGateway({
+      prisma,
+      services: ctx.services,
+      config: createTestConfig(process.cwd(), { auth: { mode: "none", password: "", token: "" } }),
+    });
+  });
+
+  afterEach(async () => {
+    await hub.dispose();
+    setStreamHub(null);
+    await prisma.channelBinding.deleteMany({});
+    await prisma.chatSession.deleteMany({});
+    await prisma.chatMessage.deleteMany({});
+    await prisma.agent.deleteMany({ where: { id: agentId } });
+    await prisma.processedWebhookEvent.deleteMany({});
+  });
+
+  async function createBinding(peerId: string, sessionId: string) {
+    await prisma.channelBinding.create({
+      data: {
+        channel: "qq",
+        peerId,
+        chatId: "",
+        sessionId,
+        agentId,
+        title: "test-binding",
+      },
+    });
+  }
+
+  it("运行中发送 /stop 可强制停止并回发确认", async () => {
+    const session = await prisma.chatSession.create({
+      data: { title: "stop-test", model: "test", status: "running" },
+    });
+    await createBinding("stop-user-1", session.id);
+
+    await hub.start(
+      session.id,
+      { message: "hi", sessionId: session.id, clientMessageId: "m1" },
+      async () => {
+        await new Promise(() => {}); // stuck runner
+      },
+    );
+    expect(hub.isRunning(session.id)).toBe(true);
+
+    const stopMsg: UnifiedMessage = {
+      envelope: { channel: "qq", peerId: "stop-user-1", timestamp: new Date().toISOString() },
+      payload: { text: "/stop" },
+      meta: { eventId: "e-stop-1" },
+    };
+    const r = await handleIncomingMessage(stopMsg);
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.sessionId).toBe(session.id);
+
+    await hub.waitFor(session.id);
+    expect(hub.isRunning(session.id)).toBe(false);
+    expect(replies).toContain("已强制停止当前回复，可以继续发消息。");
+  });
+
+  it("未运行时发送 /stop 回发未运行提示", async () => {
+    const session = await prisma.chatSession.create({
+      data: { title: "stop-test-idle", model: "test", status: "active" },
+    });
+    await createBinding("stop-user-2", session.id);
+
+    const stopMsg: UnifiedMessage = {
+      envelope: { channel: "qq", peerId: "stop-user-2", timestamp: new Date().toISOString() },
+      payload: { text: "/stop" },
+      meta: { eventId: "e-stop-2" },
+    };
+    const r = await handleIncomingMessage(stopMsg);
+    expect(r.ok).toBe(true);
+    expect(replies).toContain("当前没有正在回复的消息。");
   });
 });

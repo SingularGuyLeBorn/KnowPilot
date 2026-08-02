@@ -128,6 +128,9 @@ export async function handleIncomingMessage(msg: UnifiedMessage): Promise<Gatewa
   // 检测「清空上下文」指令：/clear 或 /重置
   const clearMatch = text.match(/^\/(?:clear|重置|清空|reset)\s*$/i);
 
+  // 检测「强制停止当前回复」指令：/stop /force /停止 /强制停止
+  const stopMatch = text.match(/^\/(?:stop|force|停止|强制停止)\s*$/i);
+
   stats.received += 1;
   const eventId = `${msg.envelope.channel}:${msg.meta.eventId}`;
   const claim = await claimWebhookEvent(deps.prisma, eventId, `im:${msg.envelope.channel}`, "im_chat");
@@ -157,6 +160,29 @@ export async function handleIncomingMessage(msg: UnifiedMessage): Promise<Gatewa
     }
 
     const hub = getStreamHub();
+
+    // 强制停止当前 session 的 runner（专治 IM 侧 stuck 在「回复中」）
+    if (stopMatch) {
+      if (!hub) {
+        stats.failed += 1;
+        return { ok: false, error: "SessionStreamHub 未就绪" };
+      }
+      const stopped = hub.forceStop(binding.sessionId);
+      const adapter = adapters.get(msg.envelope.channel);
+      if (adapter) {
+        await adapter
+          .reply(
+            msg,
+            {
+              text: stopped ? "已强制停止当前回复，可以继续发消息。" : "当前没有正在回复的消息。",
+              finish: true,
+            },
+          )
+          .catch(() => {});
+      }
+      return { ok: true, sessionId: binding.sessionId };
+    }
+
     if (!hub) {
       stats.failed += 1;
       return { ok: false, error: "SessionStreamHub 未就绪" };
