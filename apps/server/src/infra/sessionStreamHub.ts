@@ -18,6 +18,15 @@ import {
   tryClaimSessionRunning,
 } from "./sessionRunningSignal.js";
 
+class RunTimeoutError extends Error {
+  constructor(
+    public readonly reason: "run_timeout" | "stall_timeout" | "force_stop" | "unhandled_exception",
+    public readonly timeoutMs: number,
+  ) {
+    super(`运行被强制终止: ${reason}${timeoutMs > 0 ? `（timeoutMs=${timeoutMs}）` : ""}`);
+  }
+}
+
 export type BufferedEvent = {
   id: number;
   event: AgentStreamEvent;
@@ -100,6 +109,18 @@ type RunState = {
   /** E3：预生成的 partial assistant id；有实质内容时 stop 响应携带 */
   pendingAssistantMessageId?: string | null;
   hasPartialAssistant?: boolean;
+  /** 运行级看门狗：最后一次 runner 产生事件的时间戳 */
+  lastEventAt: number;
+  /** 整体运行超时计时器 */
+  runTimeoutTimer?: ReturnType<typeof setTimeout>;
+  /** 无事件 stall 超时计时器 */
+  stallTimeoutTimer?: ReturnType<typeof setTimeout>;
+  /** 是否已走过后续清理（防 watchdog 与 runner finally 双跑） */
+  finalized: boolean;
+  /** watchdog Promise 的拒绝句柄，用于 timeout/stall/forceStop 强制结束 race */
+  rejectWatchdog?: (err: RunTimeoutError) => void;
+  /** 与 runner 竞速的 watchdog Promise */
+  watchdogPromise?: Promise<never>;
 };
 
 type PersistItem = {
@@ -141,6 +162,8 @@ export class SessionStreamHub {
       cleanupIntervalMs: 60_000,
       steeringMode: "one-at-a-time",
       followUpMode: "one-at-a-time",
+      runTimeoutMs: 300_000,
+      runStallTimeoutMs: 120_000,
       ...config,
     };
     if (this.config.persist && this.config.cleanupIntervalMs > 0) {
@@ -223,6 +246,51 @@ export class SessionStreamHub {
       }
     }
     return result;
+  }
+
+  /** 是否已有 done/error 等终态事件 */
+  private hasTerminalEvent(state: RunState): boolean {
+    const last = state.buffer.at(-1);
+    return last?.event.type === "done" || last?.event.type === "error";
+  }
+
+  private disarmRunTimeout(state: RunState): void {
+    if (state.runTimeoutTimer) {
+      clearTimeout(state.runTimeoutTimer);
+      state.runTimeoutTimer = undefined;
+    }
+  }
+
+  private disarmStallTimeout(state: RunState): void {
+    if (state.stallTimeoutTimer) {
+      clearTimeout(state.stallTimeoutTimer);
+      state.stallTimeoutTimer = undefined;
+    }
+  }
+
+  /** 整体运行超时：runTimeoutMs 到点后强制 reject race */
+  private armRunTimeout(state: RunState): void {
+    this.disarmRunTimeout(state);
+    if (this.config.runTimeoutMs <= 0) return;
+    state.runTimeoutTimer = setTimeout(() => {
+      state.rejectWatchdog?.(new RunTimeoutError("run_timeout", this.config.runTimeoutMs));
+    }, this.config.runTimeoutMs);
+  }
+
+  /** 无事件 stall 超时：runner 超过 stallTimeoutMs 未 emit 任何事件则强制终止 */
+  private armStallTimeout(state: RunState): void {
+    this.disarmStallTimeout(state);
+    if (this.config.runStallTimeoutMs <= 0) return;
+    state.stallTimeoutTimer = setTimeout(() => {
+      state.rejectWatchdog?.(new RunTimeoutError("stall_timeout", this.config.runStallTimeoutMs));
+    }, this.config.runStallTimeoutMs);
+  }
+
+  /** runner 每产生一个事件就重置 stall 计时 */
+  private resetStallTimeout(state: RunState): void {
+    if (state.completed || state.finalized) return;
+    state.lastEventAt = Date.now();
+    this.armStallTimeout(state);
   }
 
   /**
@@ -374,6 +442,8 @@ export class SessionStreamHub {
         completed: false,
         nextId: 0,
         runningSince: Date.now(),
+        lastEventAt: Date.now(),
+        finalized: false,
         steeringQueue: [],
         followUpQueue: [],
         coalesce: { token: "", thinking: "", timer: null },
@@ -387,9 +457,19 @@ export class SessionStreamHub {
       const maxSeq = await this.maxEventSeqFor(sessionId);
       state.nextId = maxSeq + 1;
 
+      this.armRunTimeout(state);
+      this.armStallTimeout(state);
+
       const emit = (event: AgentStreamEvent) => {
         this.emitToRun(state, event);
+        this.resetStallTimeout(state);
       };
+
+      let rejectWatchdog: (err: RunTimeoutError) => void = () => {};
+      state.watchdogPromise = new Promise<never>((_, reject) => {
+        rejectWatchdog = reject;
+      });
+      state.rejectWatchdog = rejectWatchdog;
 
       state.promise = (async () => {
         // 终态归位：按 emit 的 done/error 判定（与 resume 旧路径同口径，现收进 Hub 全覆盖）
@@ -399,54 +479,24 @@ export class SessionStreamHub {
           else if (event.type === "error") track.terminal = "error";
           emit(event);
         };
+        const runnerPromise = runner(trackingEmit, abortController.signal);
+        // watchdog 与 runner 竞速；runner 被 timeout/stall/forceStop 击败后仍可能继续抛错，
+        // 此处 attach catch 避免其未结算的 rejection 变成 unhandled rejection
+        runnerPromise.catch(() => {});
         try {
-          await runner(trackingEmit, abortController.signal);
+          await Promise.race([runnerPromise, state.watchdogPromise!]);
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err);
           track.terminal = "error";
           emit({ type: "error", message, sessionId });
         } finally {
-          this.flushRunCoalesce(state);
-          // 先归位 DB，再标 completed / 通知 settled（与 superior drain waitFor 形成 happens-before）
-          await settleSessionDbStatus(sessionId, track.terminal);
-          state.completed = true;
-          // A5：未消费 inject 移交 user Inbox（唯一丢弃/移交收拢点）
-          await this.handoffUnconsumedInjects(state.sessionId);
-          this.clearInjectQueues(sessionId);
-          // busy/崩溃留下的软认领：有消息则 finalize，无则 unclaim，避免待发卡死
-          try {
-            const { getAppConfig } = await import("./config.js");
-            const { getEventBus } = await import("./eventBus.js");
-            const { getServiceContainer } = await import("./serviceContainer.js");
-            const services = getServiceContainer(prisma, getEventBus(), getAppConfig());
-            await services.sessionQueueItem.reconcileClaimsAfterRun(state.sessionId);
-          } catch (err) {
-            console.warn(
-              `[SessionStreamHub] reconcileClaimsAfterRun 失败 session=${sessionId}:`,
-              err instanceof Error ? err.message : err,
-            );
-          }
-          await releaseSessionRunning(sessionId);
-          // completed 置位后立即通知（listRunning 已不含本流）：订阅方按新口径重排
-          emitHubRunSettled(sessionId);
-          // 运行结束后保留一段时间，方便刚断线的前端重连取到 done/error
-          await this.flushPersistQueue();
-          state.cleanupTimer = setTimeout(() => {
-            this.runs.delete(sessionId);
-          }, this.config.eventTtlMs);
+          await this.finalizeRun(state, track.terminal, { emitError: false });
         }
       })().catch(async (err: unknown) => {
         // runner 或 finally 中任何未处理抛错都必须落在这里，否则 state.promise 会变成 unhandled rejection
         console.error(`[SessionStreamHub] 运行 promise 未捕获异常 session=${sessionId}:`, err);
-        try {
-          await settleSessionDbStatus(sessionId, "error");
-        } catch {
-          /* ignore */
-        }
-        try {
-          await releaseSessionRunning(sessionId);
-        } catch {
-          /* ignore */
+        if (!state.finalized) {
+          await this.finalizeRun(state, "error", { emitError: true, reason: "unhandled_exception" }).catch(() => {});
         }
         this.startingSessions.delete(sessionId);
       });
@@ -455,6 +505,62 @@ export class SessionStreamHub {
       this.runs.delete(sessionId);
       throw err;
     }
+  }
+
+  /**
+   * 统一运行收尾：DB 归位、未消费 inject 移交、释放 running 信号、通知任务池、清理。
+   * - 幂等：state.finalized 保证只走一次
+   * - opts.emitError：在 buffer 尚无终态事件时补 error 事件（watchdog/forceStop 用）
+   */
+  private async finalizeRun(
+    state: RunState,
+    terminal: "done" | "error",
+    opts: {
+      emitError?: boolean;
+      reason?: RunTimeoutError["reason"];
+    } = {},
+  ): Promise<void> {
+    if (state.finalized) return;
+    state.finalized = true;
+
+    this.disarmRunTimeout(state);
+    this.disarmStallTimeout(state);
+    this.flushRunCoalesce(state);
+
+    if (opts.reason) {
+      state.abortController.abort(opts.reason);
+    }
+
+    if (opts.emitError && !this.hasTerminalEvent(state)) {
+      this.pushRunEvent(state, {
+        type: "error",
+        message: `运行因 ${opts.reason} 被强制终止`,
+        sessionId: state.sessionId,
+      });
+    }
+
+    state.completed = true;
+    await settleSessionDbStatus(state.sessionId, terminal);
+    await this.handoffUnconsumedInjects(state.sessionId);
+    this.clearInjectQueues(state.sessionId);
+    try {
+      const { getAppConfig } = await import("./config.js");
+      const { getEventBus } = await import("./eventBus.js");
+      const { getServiceContainer } = await import("./serviceContainer.js");
+      const services = getServiceContainer(prisma, getEventBus(), getAppConfig());
+      await services.sessionQueueItem.reconcileClaimsAfterRun(state.sessionId);
+    } catch (err) {
+      console.warn(
+        `[SessionStreamHub] reconcileClaimsAfterRun 失败 session=${state.sessionId}:`,
+        err instanceof Error ? err.message : err,
+      );
+    }
+    await releaseSessionRunning(state.sessionId);
+    emitHubRunSettled(state.sessionId);
+    await this.flushPersistQueue();
+    state.cleanupTimer = setTimeout(() => {
+      this.runs.delete(state.sessionId);
+    }, this.config.eventTtlMs);
   }
 
   /**
@@ -794,6 +900,21 @@ export class SessionStreamHub {
   }
 
   /**
+   * 强制停止并立即结束运行（用于 IM /stop 等需要立刻释放占槽的场景）。
+   * 与 stop 的区别：stop 仅触发 abort，依赖 runner 自行收尾；
+   * forceStop 直接结束 watchdog race 并走统一 finalize，专治 runner 不响应 abort 的僵尸态。
+   */
+  forceStop(sessionId: string, reason: string = "user_force_stop"): boolean {
+    const state = this.runs.get(sessionId);
+    if (!state || state.completed || state.finalized) return false;
+    this.clearInjectQueues(sessionId);
+    state.rejectWatchdog?.(new RunTimeoutError("force_stop", 0));
+    // 触发 abort 给 runner 一次自行清理的机会；race 已结束，runner 的后续抛错被 suppress
+    state.abortController.abort(reason);
+    return true;
+  }
+
+  /**
    * 强制清理某个 session（包括内存运行与持久化事件）。
    */
   async clear(sessionId: string): Promise<void> {
@@ -802,6 +923,9 @@ export class SessionStreamHub {
       if (!state.completed) {
         state.abortController.abort("session_stop");
       }
+      this.disarmRunTimeout(state);
+      this.disarmStallTimeout(state);
+      if (state.coalesce.timer) clearTimeout(state.coalesce.timer);
       if (state.cleanupTimer) clearTimeout(state.cleanupTimer);
       this.runs.delete(sessionId);
     }
@@ -900,6 +1024,10 @@ export class SessionStreamHub {
         state.coalesce.timer = setTimeout(() => this.flushRunCoalesce(state), 16);
       }
       return;
+    }
+    if (event.type === "done" || event.type === "error") {
+      this.disarmRunTimeout(state);
+      this.disarmStallTimeout(state);
     }
     this.flushRunCoalesce(state);
     this.pushRunEvent(state, event);
