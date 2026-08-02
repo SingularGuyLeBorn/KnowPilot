@@ -153,6 +153,7 @@ function spawnService(label, args, opts = {}) {
   const maxRestarts = opts.maxRestarts ?? 3;
   let restarts = 0;
   let disposed = false;
+  let backoffMs = 1500;
 
   const start = () => {
     if (disposed) return;
@@ -174,13 +175,15 @@ function spawnService(label, args, opts = {}) {
         shutdown("EXIT");
         return;
       }
-      // web / sync：不拖死 server。常见根因是「Another next already running」多实例互杀。
-      if (restart && restarts < maxRestarts && !disposed) {
+      // web / sync / server：不拖死整栈。常见根因是「Another next already running」多实例互杀或后端未捕获异常。
+      if (restart && (maxRestarts === Infinity || restarts < maxRestarts) && !disposed) {
         restarts += 1;
+        const delay = backoffMs;
+        backoffMs = Math.min(backoffMs * 2, 30_000);
         console.error(
-          `  ↻ [${label}] ${restarts}/${maxRestarts} 秒后重启…（若反复失败：关掉其他 pnpm/IDE 终端里的 next，再 taskkill /F /T 清 3000 端口）`,
+          `  ↻ [${label}] ${maxRestarts === Infinity ? `第 ${restarts} 次` : `${restarts}/${maxRestarts}`} 次重启，${delay}ms 后…（若反复失败：关掉其他 pnpm/IDE 终端，再 taskkill /F /T 清端口）`,
         );
-        setTimeout(start, 1500);
+        setTimeout(start, delay);
         return;
       }
       console.error(
@@ -251,12 +254,12 @@ async function main() {
   // 先清遗留 3010，避免 health 命中僵尸进程、新 server 绑定失败却误报「就绪」
   await killOrphanServer(3010);
 
-  // server 意外退出（如历史 Tesseract Worker 崩进程）自动拉起，不拖死整栈；
-  // OCR 已改子进程隔离，但仍保留重启兜底。
+  // server 意外退出（如未捕获异常/历史 Tesseract Worker 崩进程）自动拉起，不拖死整栈；
+  // 指数退避无限重启：后端是核心，必须持续可用。
   spawnService("server", ["--filter", "@knowpilot/server", "dev"], {
     fatal: false,
     restart: true,
-    maxRestarts: 8,
+    maxRestarts: Infinity,
   });
   await waitForHealth(healthUrl);
 

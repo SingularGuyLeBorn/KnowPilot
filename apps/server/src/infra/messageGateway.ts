@@ -176,16 +176,17 @@ export async function handleIncomingMessage(msg: UnifiedMessage): Promise<Gatewa
 
     if (started === "busy") {
       stats.busy += 1;
-      // 会话占线：入用户队列，前端/drain 稍后消费
-      await deps.services.sessionQueueItem
-        .create({
-          sessionId: binding.sessionId,
-          kind: "user",
-          content: text,
-          source: msg.envelope.channel,
-          sourceName: `im:${msg.envelope.peerId}`,
-        })
-        .catch((err) => { console.warn("[messageGateway.ts] best-effort failed:", err instanceof Error ? err.message : err); });
+      // IM 渠道没有前端 drain 消费 user 队列，直接回发「请稍等」避免消息永久挂起
+      if (adapter) {
+        void adapter
+          .reply(msg, { text: "当前还在回复中，请稍后再发。", finish: true })
+          .catch((err) => {
+            console.warn(
+              `[MessageGateway] ${msg.envelope.channel} busy 回发失败:`,
+              err instanceof Error ? err.message : err,
+            );
+          });
+      }
       return { ok: true, sessionId: binding.sessionId, busy: true };
     }
     if (started === "duplicate") {
