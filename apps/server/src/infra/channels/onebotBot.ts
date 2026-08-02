@@ -101,8 +101,21 @@ export function createOneBotAdapter(cfg: OneBotConfig): ChannelAdapter {
     const groupId = b.group_id ? String(b.group_id).trim() : undefined;
     const msgId = String(b.message_id ?? crypto.randomUUID());
     
-    // 文本清洗：去除 CQ 码与 @ 占位符
-    let rawText = String(b.raw_message ?? b.message ?? "");
+    // 文本清洗：从 raw_message、message 数组或 string 提取文本
+    let rawText = "";
+    if (typeof b.raw_message === "string" && b.raw_message) {
+      rawText = b.raw_message;
+    } else if (typeof b.message === "string") {
+      rawText = b.message;
+    } else if (Array.isArray(b.message)) {
+      rawText = b.message
+        .map((seg: any) => {
+          if (seg.type === "text") return seg.data?.text ?? "";
+          return "";
+        })
+        .join("");
+    }
+
     // 去除 [CQ:at,qq=...]
     rawText = rawText.replace(/\[CQ:at,qq=[^\]]+\]/g, "").trim();
     // 去除 CQ 码占位符
