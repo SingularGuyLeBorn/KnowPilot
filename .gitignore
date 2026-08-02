@@ -151,3 +151,6 @@ weights/hf/
 # ngrok 二进制（项目内 scripts/ngrok.exe，用 scripts/remote-ngrok.mjs 调用；不入库，README 说明下载方式）
 scripts/ngrok.exe
 scripts/ngrok.zip
+
+# NapCatQQ 聊天机器人二进制
+tools/napcat/
