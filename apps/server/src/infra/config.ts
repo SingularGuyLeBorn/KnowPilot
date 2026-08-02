@@ -258,6 +258,10 @@ export interface AppConfig {
     steeringMode: "one-at-a-time" | "all";
     /** Follow-up 投递：one-at-a-time | all */
     followUpMode: "one-at-a-time" | "all";
+    /** 单个 Agent 运行最大存活时间（毫秒）；超时后 Hub 强制 abort 并清理，防止 runner 永不结束占槽 */
+    runTimeoutMs: number;
+    /** 运行中超过该时间无新事件（token/thinking/tool）则强制 abort；0 = 关闭 */
+    runStallTimeoutMs: number;
   };
   /** 长对话 Auto-Compact */
   compact: {
@@ -814,6 +818,8 @@ export function createAppConfig(): AppConfig {
       cleanupIntervalMs: Math.max(1000, parseInt(String(streamConfig.cleanupIntervalMs ?? "60000"), 10)),
       steeringMode: String(streamConfig.steeringMode ?? "one-at-a-time") === "all" ? "all" : "one-at-a-time",
       followUpMode: String(streamConfig.followUpMode ?? "one-at-a-time") === "all" ? "all" : "one-at-a-time",
+      runTimeoutMs: Math.max(0, parseInt(String(streamConfig.runTimeoutMs ?? "300000"), 10)),
+      runStallTimeoutMs: Math.max(0, parseInt(String(streamConfig.runStallTimeoutMs ?? "120000"), 10)),
     },
     compact: {
       enabled: String(compactConfig.enabled ?? "true") !== "false",

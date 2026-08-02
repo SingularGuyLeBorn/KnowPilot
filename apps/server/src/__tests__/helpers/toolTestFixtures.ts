@@ -146,6 +146,8 @@ export function createTestConfig(projectRoot: string, overrides?: Partial<AppCon
       cleanupIntervalMs: 0,
       steeringMode: "one-at-a-time",
       followUpMode: "one-at-a-time",
+      runTimeoutMs: 300_000,
+      runStallTimeoutMs: 120_000,
     },
     compact: {
       enabled: true,

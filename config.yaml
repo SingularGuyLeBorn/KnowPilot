@@ -32,6 +32,10 @@ stream:
   steeringMode: one-at-a-time
   # Follow-up：本会停止时注入续轮；one-at-a-time | all
   followUpMode: one-at-a-time
+  # 单个 Agent 运行最大存活时间（毫秒）；超时后 Hub 强制 abort 并清理，防止 runner 永不结束占槽
+  runTimeoutMs: 300000
+  # 运行中超过该时间无新事件（token/thinking/tool）则强制 abort；0 = 关闭
+  runStallTimeoutMs: 120000
 
 # 长对话自动压缩（Auto-Compact）
 compact:
