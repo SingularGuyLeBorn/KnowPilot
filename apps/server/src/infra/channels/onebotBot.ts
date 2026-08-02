@@ -216,7 +216,7 @@ export function loadOneBotConfigFromEnv(): OneBotConfig {
   const enabled = process.env.ONEBOT_ENABLED !== "false";
 
   return {
-    httpUrl: httpUrl || "http://127.0.0.1:3000",
+    httpUrl: httpUrl || "http://127.0.0.1:3001",
     accessToken,
     secret,
     enabled,
