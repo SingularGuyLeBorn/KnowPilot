@@ -20,6 +20,7 @@ import {
   listQueuedAsyncJobs,
   listSyncAsyncJobs,
   retryAsyncJob,
+  enqueueSessionAutoConsume,
 } from "../infra/asyncJobManager.js";
 import {
   getAsyncJobOrchestrator,
@@ -563,5 +564,18 @@ describe("W-A 同步任务通道", () => {
     } finally {
       await prisma.task.deleteMany({ where: { sessionId } });
     }
+  });
+
+  it("会话自动消费链：前序 work 抛错不阻塞后续 work", async () => {
+    const results: string[] = [];
+    const p1 = enqueueSessionAutoConsume("robust-chain", async () => {
+      throw new Error("boom");
+    });
+    const p2 = enqueueSessionAutoConsume("robust-chain", async () => {
+      results.push("ok");
+    });
+    await p1.catch(() => {});
+    await p2;
+    expect(results).toEqual(["ok"]);
   });
 });
