@@ -10,15 +10,33 @@ const SESSION_PROMPT =
   "你在为 KnowPilot（一座以 Markdown 为原子、AI 为引擎的数字花园）的对话会话起标题。根据用户首条消息提炼一个 6-12 字的中文标题，概括这次对话的主题或意图。直接输出标题，不要引号/句号/emoji/前缀/解释。";
 
 const AGENT_PROMPT =
-  "你在为 KnowPilot（一座以 Markdown 为原子、AI 为引擎的数字花园）的一个子 Agent 起名。根据它的任务，起一个 2-8 字的中文名字，像一个能干的角色名（如「资料整理员」「代码审阅官」），能体现其职责。不能含特殊符号/引号/括号/emoji，不能以「子 Agent」开头。直接输出名字。";
+  "你在为 KnowPilot（一座以 Markdown 为原子、AI 为引擎的数字花园）的 Agent 起名。" +
+  "规则：" +
+  "1. 只输出名字，2-8 个汉字，不要前缀、不要解释、不要引号、不要 emoji。" +
+  "2. 名字要像角色名，体现职责，例如「资料整理员」「代码审阅官」「诗人」「周报生成官」。" +
+  "3. 绝对禁止以「子 Agent」「Agent」「你是」「请创作」「请写」等字样开头或包含。" +
+  "4. 如果任务描述没信息，直接输出「任务执行员」。";
 
 function clean(s: string, max: number): string {
-  return s
-    .replace(/[\r\n"`]/g, "")
-    .replace(/[\[\]{}()【】（）]/g, "")
-    .replace(/[\u{1F000}-\u{1FFFF}\u{2600}-\u{27BF}]/gu, "")
-    .trim()
-    .slice(0, max);
+  return (
+    s
+      .replace(/[\r\n"`]/g, "")
+      .replace(/[\[\]{}()【】（）]/g, "")
+      .replace(/[\u{1F000}-\u{1FFFF}\u{2600}-\u{27BF}]/gu, "")
+      // 去掉常见垃圾前缀/后缀（不区分大小写）
+      .replace(/^(你是|你是一位|子\s*Agent|Agent|请创作|请写|请帮我|帮我|给我|给我写|写一个|创作一个|完成|执行|任务[:：]?\s*)/i, "")
+      .replace(/([:：,，;；].*)/, "")
+      .trim()
+      .slice(0, max)
+  );
+}
+
+function isGarbageName(s: string): boolean {
+  if (!s || s.length < 2) return true;
+  const lower = s.toLowerCase();
+  const bad = ["子 agent", "agent", "你是", "你是一位", "请创作", "请写", "帮我", "给我", "完成", "执行任务"];
+  if (bad.some((b) => lower.includes(b))) return true;
+  return false;
 }
 
 export async function autoNameSession(sessionId: string, firstMessage: string): Promise<void> {
@@ -73,7 +91,11 @@ export async function autoNameAgent(agentId: string, task: string): Promise<void
       signal: AbortSignal.timeout(AUTO_NAME_TIMEOUT_MS),
     });
     const name = clean(content ?? "", 30);
-    if (!name || /^子\s*Agent/i.test(name)) return;
+    if (isGarbageName(name)) {
+      console.warn(`[autoNameAgent] LLM 生成垃圾名字 "${content?.slice(0, 60)}"，跳过命名`);
+      return;
+    }
+    if (!name) return;
     // autoName 供列表/角标展示；若仍是占位 name（子 Agent xxxx），一并覆写 name，避免下游快照继续冻住碎片 id
     const patch: { autoName: string; name?: string } = { autoName: name };
     if (/^子\s*Agent\s+[a-z0-9]+$/i.test(agent.name)) patch.name = name;

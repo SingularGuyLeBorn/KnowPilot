@@ -42,13 +42,26 @@ import { getAppConfig } from "../../config.js";
 import type { ServiceContainer } from "../../serviceContainer.js";
 
 async function agentCreateTool(args: Record<string, unknown>, ctx: NativeToolContext) {
-  // 超级 Agent 创建 Agent 未指定 workspaceId 时，默认挂到系统 Workspace
+  const tier = (args.tier as "super" | "manager" | "sub" | undefined) ?? "sub";
   let workspaceId = args.workspaceId as string | undefined;
+  // 超级 Agent 创建 Agent 未指定 workspaceId 时，默认挂到系统 Workspace
   if (!workspaceId && ctx.agentSnapshot?.tier === "super") {
     const systemWs = await ctx.services.prisma.workspace.findFirst({
       where: { isSystem: true, systemType: "super", status: { not: "deleted" } },
     });
     if (systemWs) workspaceId = systemWs.id;
+  }
+  // manager 必须归属 Workspace；未指定时自动创建
+  if (tier === "manager" && !workspaceId) {
+    const wsResult = await ctx.services.workspace.create({
+      name: String(args.name || "Manager Workspace"),
+      path: `workspaces/auto-manager-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      description: "为 manager Agent 自动创建",
+      autoCreateManager: false,
+    } as any);
+    if (wsResult.success && wsResult.data) {
+      workspaceId = (wsResult.data as { id: string }).id;
+    }
   }
   // P1-04：敏感字段（heartbeat / heartbeatModel）仅 super tier 可设。
   // manager/sub 传了也忽略 + 写审计 warn，防止越权部署常驻心跳 Agent 持续消耗预算。
@@ -74,7 +87,7 @@ async function agentCreateTool(args: Record<string, unknown>, ctx: NativeToolCon
     model: args.model ? String(args.model) : ctx.config.llm.defaultModel,
     systemPrompt: args.systemPrompt ? String(args.systemPrompt) : "",
     tools: Array.isArray(args.tools) ? (args.tools as string[]) : [],
-    tier: args.tier as "super" | "manager" | "sub" | undefined,
+    tier,
     workspaceId,
     parentId: args.parentId as string | undefined,
     source: "native_tool:agent_create",
@@ -90,8 +103,8 @@ async function agentCreateTool(args: Record<string, unknown>, ctx: NativeToolCon
     level: "info",
     component: "swarm",
     event: "agent_created",
-    message: `Agent ${created.data.name} 被创建（tier: ${args.tier ?? "sub"}）`,
-    metadata: { agentId: created.data.id, operatorAgentId: ctx.agentSnapshot?.id, tier: args.tier ?? "sub" },
+    message: `Agent ${created.data.name} 被创建（tier: ${tier}）`,
+    metadata: { agentId: created.data.id, operatorAgentId: ctx.agentSnapshot?.id, tier },
   }).catch((err: unknown) => {
       console.warn("[swarm] best-effort failed:", err instanceof Error ? err.message : err);
     });
