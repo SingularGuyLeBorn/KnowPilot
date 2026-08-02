@@ -1,6 +1,6 @@
 import fs from "fs";
 import path from "path";
-import { spawn } from "child_process";
+import { spawn, execSync } from "child_process";
 
 function configureNapCat() {
   const configDir = path.resolve("tools/napcat_framework/config");
@@ -18,65 +18,69 @@ function configureNapCat() {
   const httpServerConfig = {
     enable: true,
     name: "OasisMind OneBot API",
-    host: "127.0.0.1",
+    host: "0.0.0.0",
     port: 3001,
     token: "",
-    enableCors: true
+    enableCors: true,
+    enableWebsocket: false,
+    messagePostFormat: "array"
   };
 
-  const files = fs.readdirSync(configDir);
-  let configuredCount = 0;
+  // Always write/update the default fallback template onebot11.json
+  const defaultPath = path.join(configDir, "onebot11.json");
+  let defaultData = {
+    network: {
+      httpServers: [httpServerConfig],
+      httpSseServers: [],
+      httpClients: [webhookConfig],
+      websocketServers: [],
+      websocketClients: [],
+      plugins: []
+    }
+  };
 
+  if (fs.existsSync(defaultPath)) {
+    try {
+      const parsed = JSON.parse(fs.readFileSync(defaultPath, "utf8"));
+      if (!parsed.network) parsed.network = {};
+      parsed.network.httpServers = [httpServerConfig];
+      parsed.network.httpClients = [webhookConfig];
+      defaultData = parsed;
+    } catch (e) {}
+  }
+  fs.writeFileSync(defaultPath, JSON.stringify(defaultData, null, 2), "utf8");
+  console.log("✅ 已自动同步模版 onebot11.json (API 3001 ↔ Webhook 3010)");
+
+  // Scan and force enable on all specific account configs (onebot11_*.json)
+  const files = fs.readdirSync(configDir);
   for (const f of files) {
-    if (f.startsWith("onebot11") && f.endsWith(".json")) {
+    if (f.startsWith("onebot11_") && f.endsWith(".json")) {
       const fullPath = path.join(configDir, f);
       try {
         const content = JSON.parse(fs.readFileSync(fullPath, "utf8"));
         if (!content.network) content.network = {};
-        if (!Array.isArray(content.network.httpClients)) content.network.httpClients = [];
-        if (!Array.isArray(content.network.httpServers)) content.network.httpServers = [];
-
-        // 配置 HTTP 反向 Webhook
-        const webhookExists = content.network.httpClients.some((c) => c.url?.includes("/api/webhooks/onebot"));
-        if (!webhookExists) {
-          content.network.httpClients.push(webhookConfig);
-        }
-
-        // 配置 HTTP API 服务端 (端口 3001，避免 3000 Next.js 冲突)
-        const serverExists = content.network.httpServers.some((s) => s.port === 3001);
-        if (!serverExists) {
-          content.network.httpServers.push(httpServerConfig);
-        }
-
+        content.network.httpServers = [httpServerConfig];
+        content.network.httpClients = [webhookConfig];
         fs.writeFileSync(fullPath, JSON.stringify(content, null, 2), "utf8");
-        console.log(`✅ 已自动配置并同步 OneBot 端口 (3001) 与 Webhook 到 ${f}`);
-        configuredCount++;
+        console.log(`✅ 已强制启用端口 (3001) 与 Webhook 到 ${f}`);
       } catch (e) {
         console.error(`解析 ${f} 失败:`, e);
       }
     }
-  }
-
-  if (configuredCount === 0) {
-    const defaultPath = path.join(configDir, "onebot11.json");
-    const defaultData = {
-      network: {
-        httpServers: [httpServerConfig],
-        httpSseServers: [],
-        httpClients: [webhookConfig],
-        websocketServers: [],
-        websocketClients: [],
-        plugins: []
-      }
-    };
-    fs.writeFileSync(defaultPath, JSON.stringify(defaultData, null, 2), "utf8");
-    console.log("✅ 已为您自动创建默认 onebot11.json (API: 3001, Webhook: 3010)");
   }
 }
 
 async function main() {
   console.log("⚙️ 自动校验与配置 OneBot 闭环通信 (API 3001 ↔ Webhook 3010)...");
   configureNapCat();
+
+  console.log("🧹 正在清理旧的 QQ / NapCat 进程...");
+  try {
+    execSync("taskkill /F /IM napimain.exe /IM QQ.exe", { stdio: "ignore" });
+  } catch (e) {}
+
+  // Wait 1.5 seconds for ports and locks to release
+  await new Promise((resolve) => setTimeout(resolve, 1500));
 
   const qqExe = "D:\\Program Files\\Tencent\\QQNT\\QQ.exe";
   const dllPath = path.resolve("tools/napcat_framework/napiloader.dll");
@@ -101,3 +105,4 @@ async function main() {
 main().catch((err) => {
   console.error("启动失败:", err);
 });
+
