@@ -7,7 +7,7 @@ import superjson from "superjson";
 import type { Context } from "./context.js";
 
 import { ZodError } from "zod";
-import { Prisma } from "@prisma/client";
+import { Prisma, type PrismaClient } from "@prisma/client";
 import { TRPCError } from "@trpc/server";
 import { isAuthEnabled, verifyAuthHeader } from "../infra/auth.js";
 
@@ -66,6 +66,35 @@ const t = initTRPC.context<Context>().create({
   },
 });
 
+interface LogQueueItem {
+  level: string;
+  component: string;
+  event: string;
+  message: string;
+  metadata: string;
+}
+
+const auditLogQueue: LogQueueItem[] = [];
+let auditLogTimer: ReturnType<typeof setInterval> | null = null;
+
+function enqueueAuditLog(item: LogQueueItem, prisma: PrismaClient) {
+  auditLogQueue.push(item);
+  if (!auditLogTimer) {
+    auditLogTimer = setInterval(async () => {
+      if (auditLogQueue.length === 0) return;
+      const batch = auditLogQueue.splice(0, 50);
+      try {
+        await prisma.log.createMany({ data: batch });
+      } catch {
+        // SQLite 忙碌时留给下一轮重试（限制最大 200 条防爆内存）
+        if (auditLogQueue.length < 200) {
+          auditLogQueue.unshift(...batch);
+        }
+      }
+    }, 2000);
+  }
+}
+
 const loggerMiddleware = t.middleware(async (opts) => {
   const start = Date.now();
   const path = opts.path;
@@ -93,42 +122,33 @@ const loggerMiddleware = t.middleware(async (opts) => {
   }
 
   if (result.ok) {
-    // P2：成功审计日志改 fire-and-forget，不阻塞请求关键路径。
-    opts.ctx.prisma.log
-      .create({
-        data: {
-          level: "info",
-          component,
-          event: path,
-          message:
-            path === "ai.invoke" && baseMeta.tool
-              ? `AI 调用 ${baseMeta.tool} 成功 (${durationMs}ms)`
-              : `${path} 执行成功 (${durationMs}ms)`,
-          metadata: JSON.stringify(baseMeta),
-        },
-      })
-      .catch((err) => {
-        // 日志写入失败不影响业务，但记录到 stderr 便于发现 Prisma 临时断开等问题（#14）
-        console.error("[loggerMiddleware] 审计日志写入失败:", err instanceof Error ? err.message : err);
-      });
+    enqueueAuditLog(
+      {
+        level: "info",
+        component,
+        event: path,
+        message:
+          path === "ai.invoke" && baseMeta.tool
+            ? `AI 调用 ${baseMeta.tool} 成功 (${durationMs}ms)`
+            : `${path} 执行成功 (${durationMs}ms)`,
+        metadata: JSON.stringify(baseMeta),
+      },
+      opts.ctx.prisma,
+    );
   } else {
-    // 错误日志保留同步写入，确保可靠性（崩溃前能落库）
-    try {
-      await opts.ctx.prisma.log.create({
-        data: {
-          level: "error",
-          component,
-          event: `${path}.failed`,
-          message:
-            path === "ai.invoke" && baseMeta.tool
-              ? `AI 调用 ${baseMeta.tool} 失败 (${durationMs}ms)`
-              : `${path} 执行失败 (${durationMs}ms)`,
-          metadata: JSON.stringify({ ...baseMeta, success: false }),
-        },
-      });
-    } catch {
-      // 日志写入失败不影响业务
-    }
+    enqueueAuditLog(
+      {
+        level: "error",
+        component,
+        event: `${path}.failed`,
+        message:
+          path === "ai.invoke" && baseMeta.tool
+            ? `AI 调用 ${baseMeta.tool} 失败 (${durationMs}ms)`
+            : `${path} 执行失败 (${durationMs}ms)`,
+        metadata: JSON.stringify({ ...baseMeta, success: false }),
+      },
+      opts.ctx.prisma,
+    );
   }
 
   return result;

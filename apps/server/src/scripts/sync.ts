@@ -64,11 +64,12 @@ interface SyncResult {
 /**
  * 判断文件是否需要同步：
  * - 数据库无记录 → 需要
- * - 本地 mtime 晚于数据库 sourceMtime → 需要
+ * - 本地 mtime 晚于数据库 sourceMtime (超过 2s 宽限期，防 API 写文件反向刷 DB) → 需要
  */
 function needsSync(recordMtime: Date, existingMtime?: Date): boolean {
   if (!existingMtime) return true;
-  return recordMtime.getTime() > existingMtime.getTime();
+  // 2s 宽限期：避免 API 刚刚更新 DB 并落盘文件时，watch 检测到文件 mtime 微小领先而反向重刷 DB
+  return recordMtime.getTime() - existingMtime.getTime() > 2000;
 }
 
 /** 同步单个实体（增量），返回统计 */

@@ -35,21 +35,27 @@ function escapeFtsQuery(query: string): string {
 }
 
 export async function ensureFtsTable(prisma: PrismaClient): Promise<void> {
-  await prisma.$executeRawUnsafe(`
-    CREATE VIRTUAL TABLE IF NOT EXISTS search_fts USING fts5(
-      entity UNINDEXED,
-      entity_id UNINDEXED,
-      title,
-      body,
-      tokenize='unicode61'
-    );
-  `);
-  ftsReady = true;
+  try {
+    await prisma.$executeRawUnsafe(`
+      CREATE VIRTUAL TABLE IF NOT EXISTS search_fts USING fts5(
+        entity UNINDEXED,
+        entity_id UNINDEXED,
+        title,
+        body,
+        tokenize='unicode61'
+      );
+    `);
+    ftsReady = true;
+  } catch {
+    // 非 SQLite 引擎（如 PostgreSQL）或未编译 FTS5 扩展时安全降级
+    ftsReady = false;
+  }
 }
 
 /** 全量重建 FTS 索引（db:sync 后调用） */
 export async function rebuildFtsIndex(prisma: PrismaClient): Promise<number> {
   await ensureFtsTable(prisma);
+  if (!ftsReady) return 0;
 
   // P1-7：收集所有插入参数后用单事务批量提交，避免逐条 $executeRawUnsafe 阻塞
   const rows: Array<[string, string, string, string]> = [];
@@ -225,6 +231,7 @@ export async function upsertFtsRow(
   body: string,
 ): Promise<void> {
   if (!ftsReady) await ensureFtsTable(prisma);
+  if (!ftsReady) return;
   const t = safeSlice(title, 500);
   const b = safeSlice(body, 8000);
   await prisma.$transaction([
@@ -241,5 +248,6 @@ export async function upsertFtsRow(
 
 export async function deleteFtsRow(prisma: PrismaClient, entity: string, entityId: string): Promise<void> {
   if (!ftsReady) await ensureFtsTable(prisma);
+  if (!ftsReady) return;
   await prisma.$executeRawUnsafe(`DELETE FROM search_fts WHERE entity = ? AND entity_id = ?`, entity, entityId);
 }

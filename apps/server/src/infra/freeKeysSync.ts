@@ -373,6 +373,13 @@ export async function syncFreeKeys(
   const nowIso = new Date().toISOString();
   const seen = new Set<string>();
 
+  const existingCredentials = await prisma.credential.findMany({
+    where: { scope: { contains: "llm" } },
+  });
+  const existingMap = new Map(existingCredentials.map((c) => [c.name, c]));
+
+  const txOps: Array<ReturnType<typeof prisma.credential.update> | ReturnType<typeof prisma.credential.create>> = [];
+
   for (const entry of validated) {
     if (!entry.key || seen.has(entry.key)) {
       skipped++;
@@ -394,43 +401,50 @@ export async function syncFreeKeys(
       syncedAt: nowIso,
     });
     const expiresAt = entry.expiresAt ? new Date(entry.expiresAt) : null;
-    const existing = await prisma.credential.findFirst({ where: { name } });
+    const existing = existingMap.get(name);
     if (existing) {
-      await prisma.credential.update({
-        where: { id: existing.id },
-        data: { value: entry.key, metadata, expiresAt },
-      });
+      txOps.push(
+        prisma.credential.update({
+          where: { id: existing.id },
+          data: { value: entry.key, metadata, expiresAt },
+        }),
+      );
       updated++;
     } else {
-      await prisma.credential.create({
-        data: {
-          name,
-          type: "api_key",
-          value: entry.key,
-          scope: "llm",
-          metadata,
-          expiresAt,
-        },
-      });
+      txOps.push(
+        prisma.credential.create({
+          data: {
+            name,
+            type: "api_key",
+            value: entry.key,
+            scope: "llm",
+            metadata,
+            expiresAt,
+          },
+        }),
+      );
       synced++;
     }
   }
 
   const cutoff = new Date(Date.now() - 48 * 60 * 60 * 1000);
-  const allFree = await prisma.credential.findMany({ where: { scope: { contains: "llm" } } });
   let cleaned = 0;
-  for (const c of allFree) {
+  for (const c of existingCredentials) {
     try {
       const meta = JSON.parse(c.metadata || "{}") as { source?: string; syncedAt?: string };
       if (meta.source !== "free") continue;
       const syncedAt = meta.syncedAt ? new Date(meta.syncedAt) : c.updatedAt;
       if (syncedAt < cutoff) {
-        await prisma.credential.delete({ where: { id: c.id } });
+        txOps.push(prisma.credential.delete({ where: { id: c.id } }));
         cleaned++;
       }
     } catch {
       /* ignore */
     }
+  }
+
+  if (txOps.length > 0) {
+    await prisma.$transaction(txOps);
   }
 
   // 注入运行时：优先 deepseek-v4-flash / smart-chat
