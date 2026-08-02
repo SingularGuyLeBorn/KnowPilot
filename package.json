@@ -43,7 +43,8 @@
     "integration:smoke:platform:medium": "pnpm --filter @knowpilot/server integration:smoke:platform:medium",
     "integration:smoke:platform:extended": "pnpm --filter @knowpilot/server integration:smoke:platform:extended",
     "read-article:spot": "pnpm --filter @knowpilot/server read-article:spot",
-    "cleanup:smoke-artifacts": "pnpm --filter @knowpilot/server cleanup:smoke-artifacts"
+    "cleanup:smoke-artifacts": "pnpm --filter @knowpilot/server cleanup:smoke-artifacts",
+    "napcat": "start tools/napcat/NapCatInstaller.exe"
   },
   "devDependencies": {
     "concurrently": "9.1.2",
