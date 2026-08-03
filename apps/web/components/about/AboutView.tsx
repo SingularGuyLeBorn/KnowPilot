@@ -3,6 +3,8 @@
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import Link from "next/link";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import {
   Archive,
   ArrowUpRight,
@@ -41,22 +43,37 @@ import { cn } from "@/lib/utils";
 const easeSpring = [0.22, 1, 0.36, 1] as const;
 
 function parseStoryCards(bodyMarkdown: string) {
-  const cards: { title: string; description: string }[] = [];
+  const cards: { title: string; body: string }[] = [];
   if (!bodyMarkdown) return cards;
   const parts = bodyMarkdown.trim().split(/^## /m).filter(Boolean);
   for (const part of parts) {
-    const lines = part.split(/\n+/).map((l) => l.trim()).filter(Boolean);
+    const lines = part.split(/\n/).map((l) => l.trimEnd());
     const title = lines[0]?.replace(/^#+\s*/, "").trim();
-    const description = lines
-      .slice(1)
-      .join(" ")
-      .replace(/\*\*/g, "")
-      .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
-      .trim()
-      .slice(0, 110);
-    if (title && description) cards.push({ title, description });
+    const body = lines.slice(1).join("\n").trim();
+    if (title && body) cards.push({ title, body });
   }
   return cards.slice(0, 4);
+}
+
+function StoryMarkdown({ children }: { children: string }) {
+  return (
+    <ReactMarkdown
+      remarkPlugins={[remarkGfm]}
+      components={{
+        p: ({ children }) => <p className="mb-1.5 text-xs leading-relaxed text-[var(--kp-text-2)] last:mb-0">{children}</p>,
+        ul: ({ children }) => <ul className="mb-1.5 list-disc space-y-0.5 pl-4 text-xs text-[var(--kp-text-2)]">{children}</ul>,
+        ol: ({ children }) => <ol className="mb-1.5 list-decimal space-y-0.5 pl-4 text-xs text-[var(--kp-text-2)]">{children}</ol>,
+        li: ({ children }) => <li className="leading-relaxed">{children}</li>,
+        a: ({ href, children }) => <a href={href} target="_blank" rel="noopener noreferrer" className="underline decoration-[var(--kp-accent-light)] underline-offset-2 hover:text-[var(--kp-accent-deep)]">{children}</a>,
+        strong: ({ children }) => <strong className="font-semibold text-[var(--kp-text-1)]">{children}</strong>,
+        h1: ({ children }) => <h4 className="mb-1 text-xs font-bold text-[var(--kp-text-1)]">{children}</h4>,
+        h2: ({ children }) => <h4 className="mb-1 text-xs font-bold text-[var(--kp-text-1)]">{children}</h4>,
+        h3: ({ children }) => <h4 className="mb-1 text-xs font-bold text-[var(--kp-text-1)]">{children}</h4>,
+      }}
+    >
+      {children}
+    </ReactMarkdown>
+  );
 }
 
 function storyIcon(title: string) {
@@ -182,7 +199,9 @@ export function AboutView({ profile }: { profile: AboutProfile }) {
                   <StaggerItem key={card.title}>
                     <div className="kp-card-dense flex h-full flex-col p-4">
                       <SectionHeader icon={<Icon className="h-4 w-4" />} title={card.title} className="mb-2" />
-                      <p className="text-xs leading-relaxed text-[var(--kp-text-2)]">{card.description}</p>
+                      <div className="line-clamp-5 text-xs leading-relaxed text-[var(--kp-text-2)]">
+                        <StoryMarkdown>{card.body}</StoryMarkdown>
+                      </div>
                     </div>
                   </StaggerItem>
                 );
