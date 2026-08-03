@@ -5,7 +5,6 @@ import { StatsStrip } from "@/components/home/StatsStrip";
 import { FeatureBento } from "@/components/home/FeatureBento";
 import { TechMarquee } from "@/components/home/TechMarquee";
 import { RecentIntelligence } from "@/components/home/RecentIntelligence";
-import { RacingTrackDivider } from "@/components/home/RacingTrackDivider";
 import { FinalCta } from "@/components/home/FinalCta";
 import { ScrollProgress } from "@/components/magicui/scroll-progress";
 
@@ -29,14 +28,13 @@ export default async function HomePage() {
   ).size;
 
   return (
-    <div className="relative shrink-0 overflow-x-hidden">
+    <div className="kp-force-light relative shrink-0 overflow-x-hidden">
       <ScrollProgress className="h-0.5 bg-gradient-to-r from-[var(--kp-accent)] via-[var(--kp-brand-light)] to-[var(--kp-brand)]" />
-      <HeroSection postCount={postCount} categoryCount={categoryCount} />
+      <HeroSection />
       <StatsStrip postCount={postCount} categoryCount={categoryCount} />
       <FeatureBento />
       <TechMarquee />
       <RecentIntelligence posts={posts} />
-      <RacingTrackDivider />
       <FinalCta />
     </div>
   );

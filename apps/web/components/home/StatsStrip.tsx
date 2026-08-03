@@ -1,7 +1,8 @@
 "use client";
 
-import { Bot, FileText, FolderKanban, Zap } from "lucide-react";
+import { Bot, FileText, FolderKanban, Sparkles, Zap } from "lucide-react";
 import { NumberTicker } from "@/components/magicui/number-ticker";
+import { StaggerContainer, StaggerItem } from "@/components/magicui/scroll-reveal";
 
 export function StatsStrip({
   postCount,
@@ -10,42 +11,35 @@ export function StatsStrip({
   postCount: number;
   categoryCount: number;
 }) {
-  return (
-    <section className="relative z-10 border-y border-[var(--kp-divider)] bg-[var(--kp-bg)]/80 backdrop-blur-md">
-      <div className="grid grid-cols-2 gap-px divide-x divide-[var(--kp-divider)] md:grid-cols-4">
-        <StatTile icon={FileText} value={postCount} label="已发布文章" />
-        <StatTile icon={FolderKanban} value={categoryCount} label="内容分类" />
-        <StatTile icon={Bot} value={"∞"} label="Agent 待命" />
-        <StatTile icon={Zap} value={"0ms"} label="本地响应" />
-      </div>
-    </section>
-  );
-}
+  const stats = [
+    { icon: FileText, value: postCount, label: "已发布文章" },
+    { icon: FolderKanban, value: categoryCount, label: "内容分类" },
+    { icon: Bot, value: "∞", label: "Agent 待命" },
+    { icon: Zap, value: "0", label: "本地响应" },
+    { icon: Sparkles, value: "∞", label: "蒸馏空间" },
+  ];
 
-function StatTile({
-  icon: Icon,
-  value,
-  label,
-}: {
-  icon: React.ComponentType<{ className?: string }>;
-  value: number | string;
-  label: string;
-}) {
-  const isNumber = typeof value === "number";
   return (
-    <div className="group flex flex-col items-center gap-2 px-4 py-6 text-center transition-colors hover:bg-[var(--kp-bg-alt)]/60">
-      <Icon className="h-6 w-6 text-[var(--kp-brand-deep)] transition-transform group-hover:scale-110" />
-      <div className="bg-gradient-to-br from-[var(--kp-text-1)] to-[var(--kp-brand-light)] bg-clip-text text-2xl font-bold tabular-nums text-transparent">
-        {isNumber ? (
-          <NumberTicker
-            value={value}
-            className="bg-gradient-to-br from-[var(--kp-text-1)] to-[var(--kp-brand-light)] bg-clip-text text-transparent"
-          />
-        ) : (
-          value
-        )}
-      </div>
-      <div className="text-xs uppercase tracking-wider text-[var(--kp-text-3)]">{label}</div>
-    </div>
+    <section className="relative overflow-hidden border-y border-[var(--kp-divider)] bg-[var(--kp-bg-alt)]/60">
+      <div className="absolute inset-0 opacity-[0.035]" style={{ backgroundImage: "radial-gradient(circle at 1px 1px, var(--kp-brand-deep) 1px, transparent 0)", backgroundSize: "26px 26px" }} />
+
+      <StaggerContainer className="relative z-10 mx-auto grid max-w-7xl grid-cols-2 divide-x divide-[var(--kp-divider)] md:grid-cols-5">
+        {stats.map((stat) => (
+          <StaggerItem key={stat.label}>
+            <div className="group flex flex-col items-center gap-1.5 px-3 py-5 text-center transition-colors hover:bg-[var(--kp-bg)]/50">
+              <stat.icon className="h-4 w-4 text-[var(--kp-brand-1)] transition-transform duration-300 group-hover:scale-110" />
+              <div className="text-2xl font-black tabular-nums tracking-tight text-[var(--kp-text-1)] md:text-3xl">
+                {typeof stat.value === "number" ? (
+                  <NumberTicker value={stat.value} className="text-[var(--kp-text-1)]" />
+                ) : (
+                  stat.value
+                )}
+              </div>
+              <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--kp-text-3)]">{stat.label}</div>
+            </div>
+          </StaggerItem>
+        ))}
+      </StaggerContainer>
+    </section>
   );
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { motion } from "framer-motion";
+import { ReactNode } from "react";
 import {
   Bot,
   Code2,
@@ -9,164 +9,112 @@ import {
   HardDrive,
   Sparkles,
 } from "lucide-react";
-import { ReactNode } from "react";
-import { BlurFade } from "@/components/magicui/blur-fade";
-import { ShineBorder } from "@/components/magicui/shine-border";
-import { FloatingShapes } from "@/components/FloatingShapes";
-import { cn } from "@/lib/utils";
+import { ScrollReveal, StaggerContainer, StaggerItem } from "@/components/magicui/scroll-reveal";
+import { GardenNetwork } from "@/components/magicui/garden-network";
 
-type FeatureCard = {
+interface Feature {
   icon: ReactNode;
   title: string;
   description: string;
-  span: "large" | "tall" | "normal";
-  style: "gradient" | "glass" | "outline" | "solid" | "soft";
-};
+  accent: "green" | "slate";
+}
 
-const features: FeatureCard[] = [
+const features: Feature[] = [
   {
-    icon: <GitBranch className="h-8 w-8" />,
+    icon: <GitBranch className="h-5 w-5" />,
     title: "Agentic 知识网络",
-    description:
-      "让 Agent 自动连接文章、标签与灵感，形成可生长的语义图谱，而不是沉睡的文件夹。",
-    span: "large",
-    style: "gradient",
+    description: "Agent 自动连接文章、标签与灵感，形成可生长的语义图谱。",
+    accent: "green",
   },
   {
-    icon: <Bot className="h-6 w-6" />,
+    icon: <Bot className="h-5 w-5" />,
     title: "多 Agent 工作流",
-    description: "选题、润色、归档、复盘，由专属 Agent 协作完成，把重复劳动交给 AI。",
-    span: "normal",
-    style: "glass",
+    description: "选题、润色、归档、复盘，由专属 Agent 协作完成。",
+    accent: "slate",
   },
   {
-    icon: <FileText className="h-6 w-6" />,
+    icon: <FileText className="h-5 w-5" />,
     title: "Markdown 原生",
-    description: "以 Markdown 为单一事实来源，内容、Frontmatter、版本全部可移植。",
-    span: "normal",
-    style: "outline",
+    description: "以 Markdown 为单一事实来源，内容全部可移植。",
+    accent: "slate",
   },
   {
-    icon: <Code2 className="h-6 w-6" />,
+    icon: <Code2 className="h-5 w-5" />,
     title: "全语法渲染",
-    description: "GFM、代码高亮、数学公式、HTML 嵌入、脚注，复杂文档也能优雅呈现。",
-    span: "normal",
-    style: "solid",
+    description: "GFM、代码高亮、数学公式、HTML 嵌入、脚注，复杂文档优雅呈现。",
+    accent: "slate",
   },
   {
-    icon: <HardDrive className="h-6 w-6" />,
+    icon: <HardDrive className="h-5 w-5" />,
     title: "本地优先",
-    description: "内容首先落盘到本地 Markdown，再同步到 SQLite，数据永远属于你。",
-    span: "normal",
-    style: "soft",
+    description: "内容首先落盘到本地，再同步到 SQLite，数据永远属于你。",
+    accent: "green",
+  },
+  {
+    icon: <Sparkles className="h-5 w-5" />,
+    title: "蒸馏品味",
+    description: "把碎片整理成文章，把收藏变成知识。",
+    accent: "slate",
   },
 ];
 
+const accentIconBg = {
+  green: "bg-[var(--kp-accent-soft)] text-[var(--kp-accent-deep)]",
+  slate: "bg-[var(--kp-brand-soft)] text-[var(--kp-brand-deep)]",
+};
+
+const accentTop = {
+  green: "bg-[var(--kp-accent)]",
+  slate: "bg-[var(--kp-brand-1)]",
+};
+
 export function FeatureBento() {
   return (
-    <section className="relative overflow-hidden px-[5%] py-24 md:px-[8%] lg:px-[10%]">
-      <div className="absolute inset-0 bg-[var(--kp-bg)]" />
-      <FloatingShapes variant="rings" className="opacity-60" />
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_20%_30%,rgba(var(--kp-accent-rgb),0.08),transparent_40%)]" />
-
-      <div className="relative mx-auto max-w-6xl">
-        <BlurFade direction="down" delay={0.05} className="mb-14 max-w-2xl">
-          <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--kp-accent)]">
-            Capabilities
+    <section className="relative overflow-hidden bg-[var(--kp-bg)] px-6 py-12 lg:px-12 lg:py-16">
+      <div className="relative z-10 mx-auto max-w-7xl">
+        <ScrollReveal className="mb-6 flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-end">
+          <div>
+            <p className="mb-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--kp-accent)]">
+              Capabilities
+            </p>
+            <h2 className="text-2xl font-bold tracking-tight text-[var(--kp-text-1)] md:text-3xl">
+              为深度写作而生的<span className="text-[var(--kp-accent-deep)]">工作台</span>
+            </h2>
+          </div>
+          <p className="max-w-md text-sm text-[var(--kp-text-2)]">
+            把内容创作拆成可组合的模块，每个方块都是一种能力。
           </p>
-          <h2 className="mb-4 text-3xl font-bold tracking-tight text-[var(--kp-text-1)] md:text-5xl">
-            为深度写作而生的工作台
-          </h2>
-          <p className="text-[var(--kp-text-2)]">
-            把内容创作拆成可组合的模块，每一个方块代表一种能力。不同的卡片、不同的材质，拼出同一套工作流。
-          </p>
-        </BlurFade>
+        </ScrollReveal>
 
-        <div className="grid auto-rows-[minmax(180px,auto)] grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-4 lg:grid-rows-2">
-          {features.map((feature, index) => (
-            <BlurFade
-              key={feature.title}
-              direction="down"
-              delay={0.08 + index * 0.08}
-              className={cn(
-                feature.span === "large" && "md:col-span-2 md:row-span-2",
-                feature.span === "tall" && "md:row-span-2",
-              )}
-            >
-              <FeatureCard feature={feature} />
-            </BlurFade>
+        <StaggerContainer className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
+          {features.map((feature) => (
+            <StaggerItem key={feature.title}>
+              <div className="kp-card-dense group relative flex h-full flex-col overflow-hidden p-4">
+                <div className={`absolute left-0 top-0 h-1 w-full ${accentTop[feature.accent]} opacity-70`} />
+                <div className="mb-2.5 flex h-9 w-9 items-center justify-center rounded-lg border border-[var(--kp-divider)] bg-[var(--kp-bg)] shadow-sm transition-transform duration-300 group-hover:scale-105">
+                  <div className={accentIconBg[feature.accent]}>{feature.icon}</div>
+                </div>
+                <h3 className="mb-1 text-sm font-bold text-[var(--kp-text-1)]">{feature.title}</h3>
+                <p className="text-xs leading-relaxed text-[var(--kp-text-2)]">{feature.description}</p>
+              </div>
+            </StaggerItem>
           ))}
-        </div>
+
+          <StaggerItem className="md:col-span-2 lg:col-span-3">
+            <div className="kp-card-dense flex flex-col gap-3 overflow-hidden p-4 sm:flex-row sm:items-center">
+              <div className="flex-1">
+                <h3 className="mb-1 text-sm font-bold text-[var(--kp-text-1)]">能力在本地连成网络</h3>
+                <p className="text-xs leading-relaxed text-[var(--kp-text-2)]">
+                  文章、Agent、Skills、记忆、任务不是孤立的模块，而是在同一个本地花园里互相引用、生长。
+                </p>
+              </div>
+              <div className="h-24 w-full sm:w-56">
+                <GardenNetwork className="h-full w-full" />
+              </div>
+            </div>
+          </StaggerItem>
+        </StaggerContainer>
       </div>
     </section>
-  );
-}
-
-function FeatureCard({ feature }: { feature: FeatureCard }) {
-  const isGradient = feature.style === "gradient";
-  const isGlass = feature.style === "glass";
-  const isOutline = feature.style === "outline";
-  const isSolid = feature.style === "solid";
-  const isSoft = feature.style === "soft";
-
-  return (
-    <motion.div
-      whileHover={{ y: -5, scale: 1.01 }}
-      transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
-      className={cn(
-        "group relative flex h-full flex-col overflow-hidden rounded-[1.75rem] p-6 md:p-7",
-        isGradient &&
-          "bg-gradient-to-br from-[var(--kp-accent-deep)] via-[var(--kp-brand-deep)] to-[var(--kp-ink)] text-white shadow-2xl",
-        isGlass && "border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)]/60 backdrop-blur-xl",
-        isOutline && "border-2 border-[var(--kp-accent)]/30 bg-[var(--kp-bg)]/80",
-        isSolid && "border border-[var(--kp-divider)] bg-[var(--kp-brand-soft)]/60",
-        isSoft && "border border-[var(--kp-divider)] bg-gradient-to-br from-[var(--kp-bg-alt)] to-[var(--kp-bg-soft)]",
-      )}
-    >
-      {isGradient && (
-        <ShineBorder
-          borderWidth={2}
-          duration={12}
-          shineColor={["var(--kp-accent)", "var(--kp-brand-light)", "var(--kp-accent-deep)"]}
-          className="rounded-[1.75rem]"
-        />
-      )}
-      <div className="relative z-10">
-        <div
-          className={cn(
-            "mb-5 inline-flex rounded-2xl p-3.5 transition-transform duration-500 group-hover:scale-110",
-            isGradient
-              ? "bg-white/15 text-white"
-              : "bg-[var(--kp-bg)]/80 text-[var(--kp-accent-deep)] shadow-sm",
-          )}
-        >
-          {feature.icon}
-        </div>
-        <h3
-          className={cn(
-            "mb-3 font-semibold",
-            feature.span === "large" ? "text-2xl md:text-3xl" : "text-xl",
-            isGradient ? "text-white" : "text-[var(--kp-text-1)]",
-          )}
-        >
-          {feature.title}
-        </h3>
-        <p
-          className={cn(
-            "leading-relaxed",
-            feature.span === "large" ? "max-w-md text-base" : "text-sm",
-            isGradient ? "text-white/75" : "text-[var(--kp-text-2)]",
-          )}
-        >
-          {feature.description}
-        </p>
-      </div>
-
-      {feature.span === "large" && (
-        <div className="absolute -bottom-4 -right-4 h-40 w-40 opacity-30 blur-2xl group-hover:opacity-50 transition-opacity">
-          <Sparkles className="h-full w-full text-white" />
-        </div>
-      )}
-    </motion.div>
   );
 }

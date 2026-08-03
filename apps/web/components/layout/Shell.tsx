@@ -7,6 +7,7 @@ import { Navbar } from "./Navbar";
 import { MobileBottomNav } from "./mobileNav";
 import { getLayoutMode, showPostSidebar, showSystemSidebar } from "./layoutMode";
 import { cn } from "@/lib/utils";
+import { MainScrollProvider } from "./MainScrollContext";
 
 /**
  * 侧栏按模式动态加载，避免根布局静态吞进 PostTreeNav → shared → hooks 整图。
@@ -79,17 +80,19 @@ export function Shell({ children, className }: ShellProps) {
           </>
         )}
 
-        <main
-          ref={mainRef}
-          data-kp-main-scroll
-          className={cn(
-            "flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto bg-[var(--kp-bg)]",
-            "pb-[calc(3.5rem+env(safe-area-inset-bottom,0px))] md:pb-0",
-            className,
-          )}
-        >
-          {children}
-        </main>
+        <MainScrollProvider rootRef={mainRef}>
+          <main
+            ref={mainRef}
+            data-kp-main-scroll
+            className={cn(
+              "flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto bg-[var(--kp-bg)]",
+              "pb-[calc(3.5rem+env(safe-area-inset-bottom,0px))] md:pb-0",
+              className,
+            )}
+          >
+            {children}
+          </main>
+        </MainScrollProvider>
       </div>
 
       {pathname !== "/login" && <MobileBottomNav />}

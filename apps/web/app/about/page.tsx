@@ -39,9 +39,9 @@ export default async function AboutPage() {
     /* 构建或离线时降级 */
   }
   return (
-    <>
+    <div className="kp-force-light">
       <ScrollProgress className="h-0.5 bg-gradient-to-r from-[var(--kp-accent)] via-[var(--kp-brand-light)] to-[var(--kp-brand)]" />
       <AboutView profile={profile} />
-    </>
+    </div>
   );
 }
