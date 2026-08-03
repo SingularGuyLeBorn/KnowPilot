@@ -464,6 +464,7 @@ export interface AboutProfile {
   github: string;
   site: string;
   email: string;
+  avatar?: string;
   focus: Array<{ title: string; description: string }>;
   roles: string[];
   stack: Array<{ category: string; items: string[] }>;
@@ -475,10 +476,19 @@ export interface AboutProfile {
     stack: string[];
     href?: string;
     highlight?: string;
+    coverImage?: string;
   }>;
   contents: Array<{ title: string; type: string; description: string; url?: string }>;
   toolbox: Array<{ category: string; items: string[] }>;
   philosophy: Array<{ title: string; description: string }>;
   bodyMarkdown: string;
   socials: Array<{ platform: string; url: string }>;
+  /** 现在在忙什么 */
+  now?: string[];
+  /** 自述片段，用于多卡片布局替代一坨 markdown */
+  storyCards?: Array<{ title: string; description: string }>;
+  /** 精选推荐 */
+  featured?: Array<{ title: string; description: string; url?: string; tag?: string; coverImage?: string }>;
+  /** 图片墙 */
+  gallery?: Array<{ url: string; caption?: string }>;
 }

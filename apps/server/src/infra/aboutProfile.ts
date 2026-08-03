@@ -15,6 +15,48 @@ function parseSimpleList(block: string): string[] {
     .map((l) => l.slice(2).trim());
 }
 
+function parseFeaturedList(block: string): AboutProfile["featured"] {
+  const items: NonNullable<AboutProfile["featured"]> = [];
+  if (!block) return items;
+  const chunks = block.split(/\n(?=\s*- title:)/).filter(Boolean);
+  for (const chunk of chunks) {
+    const title = chunk.match(/^\s*- title:\s*(.+)$/m)?.[1]?.trim();
+    const description = chunk.match(/^\s+description:\s*(.+)$/m)?.[1]?.trim();
+    const url = chunk.match(/^\s+url:\s*(.+)$/m)?.[1]?.trim();
+    const tag = chunk.match(/^\s+tag:\s*(.+)$/m)?.[1]?.trim();
+    const coverImage = chunk.match(/^\s+coverImage:\s*(.+)$/m)?.[1]?.trim();
+    if (title && description) {
+      items.push({
+        title,
+        description,
+        url: url || undefined,
+        tag: tag || undefined,
+        coverImage: coverImage || undefined,
+      });
+    }
+  }
+  return items;
+}
+
+function parseGallery(block: string): NonNullable<AboutProfile["gallery"]> {
+  const items: NonNullable<AboutProfile["gallery"]> = [];
+  if (!block) return items;
+  let current: Partial<NonNullable<AboutProfile["gallery"]>[number]> = {};
+  for (const line of block.split("\n").map((l) => l.trimEnd())) {
+    const urlMatch = line.match(/^-\s+url:\s*(.+)$/);
+    if (urlMatch) {
+      if (current.url) items.push(current as NonNullable<AboutProfile["gallery"]>[number]);
+      current = { url: urlMatch[1].trim() };
+      continue;
+    }
+    if (!current.url) continue;
+    const captionMatch = line.match(/^\s+caption:\s*(.+)$/);
+    if (captionMatch) current.caption = captionMatch[1].trim();
+  }
+  if (current.url) items.push(current as NonNullable<AboutProfile["gallery"]>[number]);
+  return items;
+}
+
 function parseTagValueList(block: string): string[] {
   return block
     .split("\n")
@@ -32,14 +74,14 @@ function parseKeyedList(block: string): Array<{ title: string; description: stri
   let current: { title: string; description: string } | null = null;
 
   for (const line of lines) {
-    const titleMatch = line.match(/^-\s*\*\*(.+?)\*\*\s*(?::|：)?\s*(.*)$/);
+    const titleMatch = line.match(/^\s*-\s*\*\*(.+?)\*\*\s*(?::|：)?\s*(.*)$/);
     if (titleMatch) {
       if (current) items.push(current);
       current = { title: titleMatch[1].trim(), description: titleMatch[2].trim() };
       continue;
     }
 
-    const plainMatch = line.match(/^-\s*(.+?)\s*(?::|：)\s*(.*)$/);
+    const plainMatch = line.match(/^\s*-\s*(.+?)\s*(?::|：)\s*(.*)$/);
     if (plainMatch) {
       if (current) items.push(current);
       current = { title: plainMatch[1].trim(), description: plainMatch[2].trim() };
@@ -61,7 +103,7 @@ function parseCategorizedList(block: string): Array<{ category: string; items: s
 
   let current: { category: string; items: string[] } | null = null;
   for (const line of block.split("\n").map((l) => l.trimEnd())) {
-    const catMatch = line.match(/^-\s*\*\*(.+?)\*\*\s*[:：]\s*(.+)$/);
+    const catMatch = line.match(/^\s*-\s*\*\*(.+?)\*\*\s*[:：]\s*(.+)$/);
     if (catMatch) {
       if (current) groups.push(current);
       current = { category: catMatch[1].trim(), items: catMatch[2].split(/[,，]/).map((s) => s.trim()).filter(Boolean) };
@@ -81,7 +123,7 @@ function parseTimeline(block: string): AboutProfile["timeline"] {
 
   let current: Partial<AboutProfile["timeline"][number]> = {};
   for (const line of block.split("\n").map((l) => l.trimEnd())) {
-    const periodMatch = line.match(/^-\s*(\d{4}[^：:]*)[:：]\s*(.+)$/);
+    const periodMatch = line.match(/^\s*-\s*(\d{4}[^：:]*)[:：]\s*(.+)$/);
     if (periodMatch) {
       if (current.period && current.title) items.push(current as AboutProfile["timeline"][number]);
       const rest = periodMatch[2].trim();
@@ -105,9 +147,9 @@ function parseProjects(block: string): AboutProfile["projects"] {
   const items: AboutProfile["projects"] = [];
   if (!block) return items;
 
-  const chunks = block.split(/\n(?=- name:)/).filter(Boolean);
+  const chunks = block.split(/\n(?=\s*- name:)/).filter(Boolean);
   for (const chunk of chunks) {
-    const name = chunk.match(/^- name:\s*(.+)$/m)?.[1]?.trim();
+    const name = chunk.match(/^\s*- name:\s*(.+)$/m)?.[1]?.trim();
     const tagline = chunk.match(/^\s+tagline:\s*(.+)$/m)?.[1]?.trim();
     const description = chunk.match(/^\s+description:\s*(.+)$/m)?.[1]?.trim();
     const stackMatch = chunk.match(/^\s+stack:\s*(.+)$/m)?.[1]?.trim();
@@ -166,7 +208,7 @@ function parseSocials(block: string): AboutProfile["socials"] {
   if (!block) return items;
 
   for (const line of block.split("\n").map((l) => l.trimEnd())) {
-    const match = line.match(/^-\s*(.+?)\s*[:：]\s*(https?:\/\/.+)$/);
+    const match = line.match(/^\s*-\s*(.+?)\s*[:：]\s*(https?:\/\/.+)$/);
     if (match) items.push({ platform: match[1].trim(), url: match[2].trim() });
   }
   return items;
@@ -226,6 +268,7 @@ export function loadAboutProfile(): AboutProfile {
     github: data.github || "",
     site: data.site || "",
     email: data.email || "",
+    avatar: data.avatar || undefined,
     focus: hasRichFocus ? parseKeyedList(focusBlock) : parseSimpleList(focusBlock).map((t) => ({ title: t, description: "" })),
     roles: parseTagValueList(data.roles || ""),
     stack: hasCategorizedStack
@@ -240,5 +283,9 @@ export function loadAboutProfile(): AboutProfile {
       : parseSimpleList(philosophyBlock).map((t) => ({ title: t, description: "" })),
     bodyMarkdown: body,
     socials: parseSocials(data.socials || ""),
+    now: parseSimpleList(data.now || ""),
+    storyCards: parseKeyedList(data.storyCards || ""),
+    featured: parseFeaturedList(data.featured || ""),
+    gallery: parseGallery(data.gallery || ""),
   };
 }

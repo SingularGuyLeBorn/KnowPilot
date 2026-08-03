@@ -1,46 +1,42 @@
-"use client";
-
-import dynamic from "next/dynamic";
+import type { Post } from "@knowpilot/shared";
+import { trpcQuery } from "@/lib/serverTrpc";
 import { HeroSection } from "@/components/home/HeroSection";
-import { trpc } from "@/lib/trpc";
+import { StatsStrip } from "@/components/home/StatsStrip";
+import { FeatureBento } from "@/components/home/FeatureBento";
+import { TechMarquee } from "@/components/home/TechMarquee";
+import { SolarSystemSection } from "@/components/home/SolarSystemSection";
+import { RecentIntelligence } from "@/components/home/RecentIntelligence";
+import { RacingTrackDivider } from "@/components/home/RacingTrackDivider";
+import { FinalCta } from "@/components/home/FinalCta";
 
-/** below-fold：首屏只 hydrate Hero，滚动区再拆包 */
-const FeatureBento = dynamic(
-  () => import("@/components/home/FeatureBento").then((m) => m.FeatureBento),
-  { ssr: true, loading: () => <div className="min-h-[28rem]" aria-hidden /> },
-);
-const TechMarquee = dynamic(
-  () => import("@/components/home/TechMarquee").then((m) => m.TechMarquee),
-  { ssr: true, loading: () => <div className="min-h-16" aria-hidden /> },
-);
-const RecentIntelligence = dynamic(
-  () => import("@/components/home/RecentIntelligence").then((m) => m.RecentIntelligence),
-  { ssr: true, loading: () => <div className="min-h-[24rem]" aria-hidden /> },
-);
-const FinalCta = dynamic(
-  () => import("@/components/home/FinalCta").then((m) => m.FinalCta),
-  { ssr: true, loading: () => <div className="min-h-[16rem]" aria-hidden /> },
-);
+export const metadata = {
+  title: "见微 · OasisMind — 本地优先的数字主力",
+  description: "见微知著：以 Markdown 为原子、AI 为引擎的本地优先知识花园与数字主力",
+};
 
-export default function HomePage() {
-  const { data: recentPosts } = trpc.post.list.useQuery({
-    published: true,
-    pageSize: 6,
-  });
+export default async function HomePage() {
+  let recentPosts: { items: Post[]; total: number } = { items: [], total: 0 };
+  try {
+    recentPosts = await trpcQuery("post.list", { published: true, pageSize: 6 });
+  } catch {
+    // 构建或离线时降级
+  }
 
-  const posts = recentPosts?.items ?? [];
-  const postCount = recentPosts?.total ?? 0;
-  // Hero 分类数：用当前页推导即可，避免为计数再拉 pageSize:100
+  const posts = recentPosts.items ?? [];
+  const postCount = recentPosts.total ?? 0;
   const categoryCount = new Set(
-    recentPosts?.items.map((p) => p.category).filter(Boolean) ?? [],
+    posts.map((p) => p.category).filter(Boolean),
   ).size;
 
   return (
-    <div className="relative">
+    <div className="relative shrink-0 overflow-x-hidden">
       <HeroSection postCount={postCount} categoryCount={categoryCount} />
+      <StatsStrip postCount={postCount} categoryCount={categoryCount} />
       <FeatureBento />
       <TechMarquee />
+      <SolarSystemSection />
       <RecentIntelligence posts={posts} />
+      <RacingTrackDivider />
       <FinalCta />
     </div>
   );

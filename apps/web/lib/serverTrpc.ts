@@ -16,10 +16,13 @@ type TrpcBatchItem<T> = {
 };
 
 /** 无 input 的 tRPC query（superjson batch GET） */
-export async function trpcQuery<T>(procedure: string): Promise<T> {
+export async function trpcQuery<T>(procedure: string): Promise<T>;
+/** 带 input 的 tRPC query（superjson batch GET） */
+export async function trpcQuery<T>(procedure: string, input: unknown): Promise<T>;
+export async function trpcQuery<T>(procedure: string, input?: unknown): Promise<T> {
   const url = new URL(`${getServerBaseUrl()}/api/trpc/${procedure}`);
   url.searchParams.set("batch", "1");
-  url.searchParams.set("input", JSON.stringify({ 0: { json: null } }));
+  url.searchParams.set("input", JSON.stringify({ 0: { json: input ?? null } }));
 
   const res = await fetch(url, { cache: "no-store" });
   if (!res.ok) {
