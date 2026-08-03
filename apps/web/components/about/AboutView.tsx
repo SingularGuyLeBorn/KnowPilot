@@ -37,11 +37,9 @@ import {
   Wand2,
 } from "lucide-react";
 import type { AboutProfile } from "@knowpilot/shared";
-import { NumberTicker } from "@/components/magicui/number-ticker";
 import { ScrollReveal, StaggerContainer, StaggerItem } from "@/components/magicui/scroll-reveal";
 import { HeroSection } from "@/components/about/HeroSection";
 import { OasisMindLogo } from "@/lib/icons";
-import { trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
 
 const easeSpring = [0.22, 1, 0.36, 1] as const;
@@ -225,50 +223,12 @@ function SectionLabel({
 }
 
 export function AboutView({ profile }: { profile: AboutProfile }) {
-  const { data: recentPosts } = trpc.post.list.useQuery({ published: true, pageSize: 6 });
-  const [analyticsReady, setAnalyticsReady] = useState(false);
-  useEffect(() => {
-    const w = window as Window & { requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number; cancelIdleCallback?: (id: number) => void };
-    if (typeof w.requestIdleCallback === "function") {
-      const id = w.requestIdleCallback(() => setAnalyticsReady(true), { timeout: 2500 });
-      return () => {
-        if (typeof w.cancelIdleCallback === "function") w.cancelIdleCallback(id);
-      };
-    }
-    const t = setTimeout(() => setAnalyticsReady(true), 1400);
-    return () => clearTimeout(t);
-  }, []);
-  const { data: analytics } = trpc.analytics.dashboard.useQuery({}, { enabled: analyticsReady });
-  const postCount = analytics?.posts.published ?? recentPosts?.total ?? 0;
-  const categoryCount = new Set(recentPosts?.items.map((p) => p.category).filter(Boolean) ?? []).size;
   const storyCards = parseStoryCards(profile.bodyMarkdown);
 
   return (
     <div className="relative w-full shrink-0 overflow-x-hidden bg-[var(--kp-bg)]">
       <HeroSection profile={profile} />
       <QuoteCarousel />
-
-      {/* Compact stats */}
-      <section className="relative border-y border-[var(--kp-divider)] bg-[var(--kp-bg-alt)]/60">
-        <div className="absolute inset-0 opacity-[0.035]" style={{ backgroundImage: "radial-gradient(circle at 1px 1px, var(--kp-brand-deep) 1px, transparent 0)", backgroundSize: "26px 26px" }} />
-        <StaggerContainer className="relative z-10 mx-auto grid max-w-7xl grid-cols-2 divide-x divide-[var(--kp-divider)] md:grid-cols-4">
-          {[
-            { label: "已发布", value: postCount },
-            { label: "分类", value: categoryCount },
-            { label: "项目", value: profile.projects.length },
-            { label: "偏见", value: profile.philosophy.length },
-          ].map((stat) => (
-            <StaggerItem key={stat.label}>
-              <div className="group flex flex-col items-center gap-1 px-3 py-4 text-center">
-                <span className="text-2xl font-black tabular-nums tracking-tight text-[var(--kp-text-1)] md:text-3xl">
-                  <NumberTicker value={stat.value} className="text-[var(--kp-text-1)]" />
-                </span>
-                <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--kp-text-3)]">{stat.label}</span>
-              </div>
-            </StaggerItem>
-          ))}
-        </StaggerContainer>
-      </section>
 
       <main className="mx-auto max-w-7xl px-6 py-8 lg:px-12 lg:py-10">
         {/* Story cards */}
