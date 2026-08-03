@@ -1,24 +1,27 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { motion, useInView, useScroll, useTransform } from "framer-motion";
 import Link from "next/link";
 import {
   ArrowUpRight,
   BookOpen,
   Bot,
-  Brain,
+  Briefcase,
+  Calendar,
   Code2,
   Cpu,
   ExternalLink,
   FileText,
   Github,
   Globe,
+  GraduationCap,
   Lightbulb,
   Loader2,
   Mail,
   MapPin,
   MessageSquare,
+  Rocket,
   Sparkles,
   Target,
   Wand2,
@@ -32,6 +35,13 @@ import { cn } from "@/lib/utils";
 
 const spring = { type: "spring" as const, stiffness: 260, damping: 26 };
 const easeOut = [0.22, 1, 0.36, 1] as const;
+
+const TAG_ICON: Record<string, React.ComponentType<{ className?: string }>> = {
+  工作: Briefcase,
+  项目: Rocket,
+  转折: Target,
+  学习: GraduationCap,
+};
 
 export function AboutView({ profile }: { profile: AboutProfile }) {
   const { data: recentPosts, isLoading: postsLoading } = trpc.post.list.useQuery({
@@ -65,12 +75,6 @@ export function AboutView({ profile }: { profile: AboutProfile }) {
     recentPosts?.items.map((p) => p.category).filter(Boolean) ?? [],
   ).size;
 
-  const aboutTeaser = useMemo(() => {
-    if (!profile.bodyMarkdown) return "";
-    const firstBlock = profile.bodyMarkdown.split(/\n\s*\n/)[0] ?? "";
-    return firstBlock.replace(/\*\*|__/g, "").slice(0, 220);
-  }, [profile.bodyMarkdown]);
-
   return (
     <div className="relative w-full overflow-x-hidden bg-[var(--kp-bg)]">
       {/* 背景：星空 + 渐变光晕 */}
@@ -94,11 +98,17 @@ export function AboutView({ profile }: { profile: AboutProfile }) {
           runCount={analytics?.runs.total}
         />
 
-        <BentoSection profile={profile} aboutTeaser={aboutTeaser} />
+        {profile.timeline.length > 0 && <TimelineSection timeline={profile.timeline} />}
 
-        <ProjectsSection projects={profile.projects} />
+        <BentoSection profile={profile} />
+
+        {profile.projects.length > 0 && <ProjectsSection projects={profile.projects} />}
+
+        {profile.contents.length > 0 && <ContentsSection contents={profile.contents} />}
 
         <StorySection bodyMarkdown={profile.bodyMarkdown} />
+
+        {profile.philosophy.length > 0 && <PhilosophySection philosophy={profile.philosophy} />}
 
         <div className="bg-[var(--kp-bg)]/92">
           <RecentIntelligence posts={posts} />
@@ -114,7 +124,6 @@ function HeroSection({ profile }: { profile: AboutProfile }) {
   return (
     <section className="relative flex min-h-[92vh] items-center px-[5%] pb-12 pt-24 md:px-[8%] lg:pt-28">
       <div className="grid w-full items-center gap-10 lg:grid-cols-[1.1fr_0.9fr] lg:gap-16">
-        {/* 左侧：文字 */}
         <motion.div
           initial={{ opacity: 0, y: 32 }}
           animate={{ opacity: 1, y: 0 }}
@@ -123,7 +132,7 @@ function HeroSection({ profile }: { profile: AboutProfile }) {
         >
           <div className="mb-5 inline-flex w-fit items-center gap-2 rounded-full border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)]/70 px-3 py-1.5 text-xs font-medium text-[var(--kp-text-2)] backdrop-blur-md">
             <Sparkles className="h-3.5 w-3.5 text-[var(--kp-brand-deep)]" />
-            <span>Creator · Developer · AI 协作者</span>
+            <span>{profile.oneLiner || "Creator · Developer · AI 协作者"}</span>
           </div>
 
           <h1 className="text-[clamp(3.5rem,12vw,8rem)] font-black leading-[0.9] tracking-tighter text-[var(--kp-text-1)]">
@@ -140,6 +149,19 @@ function HeroSection({ profile }: { profile: AboutProfile }) {
             {profile.tagline}
           </p>
 
+          {profile.roles.length > 0 && (
+            <div className="mt-6 flex flex-wrap gap-2">
+              {profile.roles.map((role) => (
+                <span
+                  key={role}
+                  className="rounded-full border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)]/70 px-3 py-1 text-xs text-[var(--kp-text-2)] backdrop-blur-sm"
+                >
+                  {role}
+                </span>
+              ))}
+            </div>
+          )}
+
           <div className="mt-8 flex flex-wrap items-center gap-3">
             <Link
               href="/chat"
@@ -149,7 +171,19 @@ function HeroSection({ profile }: { profile: AboutProfile }) {
               开始对话
               <ArrowUpRight className="h-4 w-4 transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5" />
             </Link>
-            {profile.github && (
+            {profile.socials.map((s) => (
+              <a
+                key={s.platform}
+                href={s.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-2 rounded-full border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)]/70 px-5 py-3 text-sm font-medium text-[var(--kp-text-1)] backdrop-blur-md transition-all hover:border-[var(--kp-brand-light)] hover:bg-[var(--kp-brand-soft)]"
+              >
+                <SocialIcon platform={s.platform} />
+                {s.platform}
+              </a>
+            ))}
+            {!profile.socials.find((s) => s.platform.toLowerCase() === "github") && profile.github && (
               <a
                 href={profile.github}
                 target="_blank"
@@ -158,17 +192,6 @@ function HeroSection({ profile }: { profile: AboutProfile }) {
               >
                 <Github className="h-4 w-4" />
                 GitHub
-              </a>
-            )}
-            {profile.site && (
-              <a
-                href={profile.site}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-2 rounded-full border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)]/70 px-5 py-3 text-sm font-medium text-[var(--kp-text-1)] backdrop-blur-md transition-all hover:border-[var(--kp-brand-light)] hover:bg-[var(--kp-brand-soft)]"
-              >
-                <Globe className="h-4 w-4" />
-                站点
               </a>
             )}
           </div>
@@ -192,11 +215,18 @@ function HeroSection({ profile }: { profile: AboutProfile }) {
           </div>
         </motion.div>
 
-        {/* 右侧：抽象视觉 */}
         <HeroVisual />
       </div>
     </section>
   );
+}
+
+function SocialIcon({ platform }: { platform: string }) {
+  const p = platform.toLowerCase();
+  if (p.includes("github")) return <Github className="h-4 w-4" />;
+  if (p.includes("twitter") || p.includes("x")) return <Globe className="h-4 w-4" />;
+  if (p.includes("bilibili")) return <Globe className="h-4 w-4" />;
+  return <Globe className="h-4 w-4" />;
 }
 
 function HeroVisual() {
@@ -207,7 +237,6 @@ function HeroVisual() {
       transition={{ duration: 1, delay: 0.2, ease: easeOut }}
       className="relative hidden aspect-square w-full max-w-lg lg:block"
     >
-      {/* 主球体：绿洲意象 */}
       <div className="absolute inset-[10%] rounded-full bg-gradient-to-br from-[var(--kp-brand)] via-[var(--kp-accent)] to-[var(--kp-brand-deep)] opacity-80 blur-2xl" />
       <motion.div
         animate={{ rotate: 360 }}
@@ -215,8 +244,6 @@ function HeroVisual() {
         className="absolute inset-[15%] rounded-full bg-gradient-to-tr from-[var(--kp-brand-soft)] via-[var(--kp-accent-soft)] to-[var(--kp-bg-alt)]"
         style={{ boxShadow: "inset 0 0 80px rgba(var(--kp-brand-rgb),0.3)" }}
       />
-
-      {/* 轨道环 */}
       <motion.div
         animate={{ rotate: -360 }}
         transition={{ duration: 20, repeat: Infinity, ease: "linear" }}
@@ -230,28 +257,9 @@ function HeroVisual() {
         style={{ borderRadius: "40% 60% 55% 45% / 50% 50% 60% 40%" }}
       />
 
-      {/* 浮动卡片 */}
-      <FloatingCard
-        icon={Bot}
-        label="Agents"
-        sub="常驻运行"
-        className="left-0 top-[20%]"
-        delay={0.4}
-      />
-      <FloatingCard
-        icon={BookOpen}
-        label="Notes"
-        sub="Markdown 为源"
-        className="bottom-[18%] right-0"
-        delay={0.6}
-      />
-      <FloatingCard
-        icon={Wand2}
-        label="Skills"
-        sub="可编排"
-        className="right-[8%] top-[8%]"
-        delay={0.8}
-      />
+      <FloatingCard icon={Bot} label="Agents" sub="常驻运行" className="left-0 top-[20%]" delay={0.4} />
+      <FloatingCard icon={BookOpen} label="Notes" sub="Markdown 为源" className="bottom-[18%] right-0" delay={0.6} />
+      <FloatingCard icon={Wand2} label="Skills" sub="可编排" className="right-[8%] top-[8%]" delay={0.8} />
     </motion.div>
   );
 }
@@ -385,98 +393,113 @@ function AnimatedNumber({ value }: { value: number }) {
   );
 }
 
-function BentoSection({ profile, aboutTeaser }: { profile: AboutProfile; aboutTeaser: string }) {
+function TimelineSection({ timeline }: { timeline: AboutProfile["timeline"] }) {
   return (
     <section className="relative z-10 px-[5%] py-20 md:px-[8%]">
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        whileInView={{ opacity: 1, y: 0 }}
-        viewport={{ once: true, margin: "-60px" }}
-        transition={{ duration: 0.7, ease: easeOut }}
-        className="mb-10"
-      >
-        <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--kp-accent)]">
-          Profile
-        </p>
-        <h2 className="text-3xl font-bold tracking-tight text-[var(--kp-text-1)] md:text-4xl">
-          不是简历，是一些偏好
-        </h2>
-      </motion.div>
+      <SectionHeader eyebrow="Timeline" title="一点经历" />
+      <div className="relative mx-auto max-w-4xl">
+        <div className="absolute left-4 top-0 bottom-0 w-px bg-[var(--kp-divider)] md:left-1/2" />
+        {timeline.map((item, i) => {
+          const Icon = (item.tag && TAG_ICON[item.tag]) || Calendar;
+          const isLeft = i % 2 === 0;
+          return (
+            <motion.div
+              key={item.period + item.title}
+              initial={{ opacity: 0, y: 24 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true, margin: "-60px" }}
+              transition={{ duration: 0.7, delay: i * 0.1, ease: easeOut }}
+              className={cn(
+                "relative mb-8 flex items-start md:items-center",
+                isLeft ? "md:flex-row" : "md:flex-row-reverse",
+              )}
+            >
+              <div className="hidden w-1/2 md:block" />
+              <div className="absolute left-4 z-10 flex h-8 w-8 -translate-x-1/2 items-center justify-center rounded-full border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)] md:left-1/2">
+                <Icon className="h-4 w-4 text-[var(--kp-brand-deep)]" />
+              </div>
+              <div className="pl-12 md:w-1/2 md:pl-0 md:px-10">
+                <div
+                  className={cn(
+                    "rounded-2xl border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)]/70 p-5 backdrop-blur-md transition hover:border-[var(--kp-brand-light)]",
+                    isLeft ? "md:text-right" : "md:text-left",
+                  )}
+                >
+                  <span className="text-xs font-semibold uppercase tracking-wider text-[var(--kp-brand-deep)]">
+                    {item.period}
+                  </span>
+                  <h3 className="mt-1 text-lg font-semibold text-[var(--kp-text-1)]">{item.title}</h3>
+                  <p className="mt-2 text-sm leading-relaxed text-[var(--kp-text-2)]">{item.description}</p>
+                </div>
+              </div>
+            </motion.div>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+function BentoSection({ profile }: { profile: AboutProfile }) {
+  return (
+    <section className="relative z-10 px-[5%] py-20 md:px-[8%]">
+      <SectionHeader eyebrow="Profile" title="偏好与工具" />
 
       <div className="grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-3">
-        {/* 关于我：大卡片跨 2 列 */}
-        <BentoCard className="md:col-span-2 lg:col-span-2" delay={0}>
-          <div className="flex h-full flex-col justify-between">
-            <div>
-              <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-xl bg-[var(--kp-brand-soft)] text-[var(--kp-brand-deep)]">
-                <Lightbulb className="h-5 w-5" />
-              </div>
-              <h3 className="mb-3 text-xl font-semibold text-[var(--kp-text-1)]">关于我</h3>
-              <p className="text-sm leading-relaxed text-[var(--kp-text-2)]">{aboutTeaser}…</p>
-            </div>
-            <Link
-              href="#story"
-              className="group mt-5 inline-flex w-fit items-center gap-1 text-sm font-medium text-[var(--kp-brand-deep)]"
-            >
-              阅读完整自述
-              <ArrowUpRight className="h-4 w-4 transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5" />
-            </Link>
-          </div>
-        </BentoCard>
-
         {/* 关注方向 */}
-        <BentoCard delay={0.05}>
+        <BentoCard className="md:col-span-2 lg:col-span-2" delay={0}>
           <div className="flex h-full flex-col">
-            <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-xl bg-[var(--kp-accent-soft)] text-[var(--kp-accent-deep)]">
+            <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-xl bg-[var(--kp-brand-soft)] text-[var(--kp-brand-deep)]">
               <Target className="h-5 w-5" />
             </div>
-            <h3 className="mb-3 text-lg font-semibold text-[var(--kp-text-1)]">关注方向</h3>
-            <ul className="space-y-2">
+            <h3 className="mb-4 text-xl font-semibold text-[var(--kp-text-1)]">关注方向</h3>
+            <div className="grid gap-4 sm:grid-cols-2">
               {profile.focus.map((item) => (
-                <li key={item} className="flex items-start gap-2 text-sm text-[var(--kp-text-2)]">
-                  <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-[var(--kp-accent)]" />
-                  {item}
-                </li>
+                <div key={item.title} className="rounded-xl border border-[var(--kp-divider-light)] bg-[var(--kp-bg)]/50 p-4">
+                  <h4 className="mb-1 font-semibold text-[var(--kp-text-1)]">{item.title}</h4>
+                  {item.description && (
+                    <p className="text-xs leading-relaxed text-[var(--kp-text-2)]">{item.description}</p>
+                  )}
+                </div>
               ))}
-            </ul>
+            </div>
           </div>
         </BentoCard>
 
         {/* 技术栈 */}
-        <BentoCard delay={0.1}>
+        {profile.stack.map((group) => (
+          <BentoCard key={group.category} delay={0.05}>
+            <div className="flex h-full flex-col">
+              <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-xl bg-[var(--kp-accent-soft)] text-[var(--kp-accent-deep)]">
+                <Code2 className="h-5 w-5" />
+              </div>
+              <h3 className="mb-3 text-lg font-semibold text-[var(--kp-text-1)]">{group.category}</h3>
+              <div className="flex flex-wrap gap-2">
+                {group.items.map((item) => (
+                  <span
+                    key={item}
+                    className="rounded-full border border-[var(--kp-divider)] bg-[var(--kp-bg)]/60 px-3 py-1 text-xs text-[var(--kp-text-2)]"
+                  >
+                    {item}
+                  </span>
+                ))}
+              </div>
+            </div>
+          </BentoCard>
+        ))}
+
+        {/* 工具箱 */}
+        <BentoCard className="md:col-span-2 lg:col-span-3" delay={0.1}>
           <div className="flex h-full flex-col">
             <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-xl bg-[var(--kp-brand-soft)] text-[var(--kp-brand-deep)]">
-              <Code2 className="h-5 w-5" />
+              <Wand2 className="h-5 w-5" />
             </div>
-            <h3 className="mb-3 text-lg font-semibold text-[var(--kp-text-1)]">技术栈</h3>
-            <div className="flex flex-wrap gap-2">
-              {profile.stack.map((item) => (
-                <span
-                  key={item}
-                  className="rounded-full border border-[var(--kp-divider)] bg-[var(--kp-bg)]/60 px-3 py-1 text-xs text-[var(--kp-text-2)]"
-                >
-                  {item}
-                </span>
-              ))}
-            </div>
-          </div>
-        </BentoCard>
-
-        {/* 理念 */}
-        <BentoCard className="md:col-span-2 lg:col-span-2" delay={0.15}>
-          <div className="flex h-full flex-col">
-            <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-xl bg-[var(--kp-accent-soft)] text-[var(--kp-accent-deep)]">
-              <Brain className="h-5 w-5" />
-            </div>
-            <h3 className="mb-3 text-lg font-semibold text-[var(--kp-text-1)]">理念</h3>
-            <div className="grid gap-3 sm:grid-cols-2">
-              {profile.philosophy.map((line) => (
-                <div
-                  key={line}
-                  className="flex items-start gap-3 rounded-xl border border-[var(--kp-divider-light)] bg-[var(--kp-bg)]/50 p-3"
-                >
-                  <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--kp-brand)]" />
-                  <p className="text-sm leading-relaxed text-[var(--kp-text-2)]">{line}</p>
+            <h3 className="mb-4 text-xl font-semibold text-[var(--kp-text-1)]">现在用的工具</h3>
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {profile.toolbox.map((group) => (
+                <div key={group.category} className="rounded-xl border border-[var(--kp-divider-light)] bg-[var(--kp-bg)]/50 p-4">
+                  <h4 className="mb-2 text-sm font-semibold text-[var(--kp-text-1)]">{group.category}</h4>
+                  <p className="text-xs leading-relaxed text-[var(--kp-text-2)]">{group.items.join(" · ")}</p>
                 </div>
               ))}
             </div>
@@ -513,52 +536,25 @@ function BentoCard({
 }
 
 function ProjectsSection({ projects }: { projects: AboutProfile["projects"] }) {
-  if (!projects.length) return null;
-
   return (
     <section className="relative z-10 px-[5%] py-20 md:px-[8%]">
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        whileInView={{ opacity: 1, y: 0 }}
-        viewport={{ once: true, margin: "-60px" }}
-        transition={{ duration: 0.7, ease: easeOut }}
-        className="mb-10"
-      >
-        <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--kp-accent)]">
-          Projects
-        </p>
-        <h2 className="text-3xl font-bold tracking-tight text-[var(--kp-text-1)] md:text-4xl">
-          正在做 / 做过的事
-        </h2>
-      </motion.div>
-
+      <SectionHeader eyebrow="Projects" title="做过 / 正在做的事" />
       <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-3">
         {projects.map((p, i) => (
-          <ProjectCard key={p.name} project={p} index={i} total={projects.length} />
+          <ProjectCard key={p.name} project={p} index={i} />
         ))}
       </div>
     </section>
   );
 }
 
-function ProjectCard({
-  project,
-  index,
-  total,
-}: {
-  project: AboutProfile["projects"][number];
-  index: number;
-  total: number;
-}) {
+function ProjectCard({ project, index }: { project: AboutProfile["projects"][number]; index: number }) {
   const ref = useRef<HTMLDivElement>(null);
   const { scrollYProgress } = useScroll({
     target: ref,
     offset: ["start end", "end start"],
   });
-  const y = useTransform(scrollYProgress, [0, 1], [40, -40]);
-
-  const scale = 1 - (total - 1 - index) * 0.02;
-  const topOffset = index * 12;
+  const y = useTransform(scrollYProgress, [0, 1], [30, -30]);
 
   return (
     <motion.div
@@ -567,47 +563,97 @@ function ProjectCard({
       initial={{ opacity: 0, y: 30 }}
       whileInView={{ opacity: 1, y: 0 }}
       viewport={{ once: true, margin: "-60px" }}
-      transition={{ duration: 0.7, delay: index * 0.1, ease: easeOut }}
+      transition={{ duration: 0.7, delay: index * 0.08, ease: easeOut }}
       className="group relative"
     >
-      <div
-        className="relative rounded-3xl border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)]/80 p-6 backdrop-blur-md transition-all duration-500 hover:-translate-y-1.5 hover:border-[var(--kp-brand-light)] hover:bg-[var(--kp-bg-alt)] md:p-7"
-        style={{
-          transform: `scale(${scale})`,
-          transformOrigin: "top center",
-          top: topOffset,
-        }}
-      >
+      <div className="relative h-full rounded-3xl border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)]/80 p-6 backdrop-blur-md transition-all duration-500 hover:-translate-y-1.5 hover:border-[var(--kp-brand-light)] hover:bg-[var(--kp-bg-alt)] md:p-7">
         <div className="mb-4 flex items-center justify-between">
-          <span className="text-xs font-bold text-[var(--kp-text-3)]">{String(index + 1).padStart(2, "0")}</span>
           <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-[var(--kp-brand-soft)] text-[var(--kp-brand-deep)]">
             <Cpu className="h-4 w-4" />
           </div>
+          {project.highlight && (
+            <span className="rounded-full bg-[var(--kp-accent-soft)] px-2 py-0.5 text-[10px] font-medium text-[var(--kp-accent-deep)]">
+              {project.highlight}
+            </span>
+          )}
         </div>
-        <h3 className="mb-2 text-lg font-semibold text-[var(--kp-text-1)]">
+        <h3 className="mb-1 text-lg font-semibold text-[var(--kp-text-1)]">
           {project.href ? (
-            <Link
-              href={project.href}
-              className="transition hover:text-[var(--kp-brand-deep)]"
-            >
+            <Link href={project.href} className="transition hover:text-[var(--kp-brand-deep)]">
               {project.name}
             </Link>
           ) : (
             project.name
           )}
         </h3>
+        {project.tagline && <p className="mb-2 text-xs font-medium text-[var(--kp-brand-deep)]">{project.tagline}</p>}
         <p className="text-sm leading-relaxed text-[var(--kp-text-2)]">{project.description}</p>
+        {project.stack.length > 0 && (
+          <div className="mt-4 flex flex-wrap gap-1.5">
+            {project.stack.slice(0, 5).map((s) => (
+              <span key={s} className="rounded-md bg-[var(--kp-bg)] px-2 py-0.5 text-[10px] text-[var(--kp-text-3)]">
+                {s}
+              </span>
+            ))}
+          </div>
+        )}
         {project.href && (
-          <Link
+          <a
             href={project.href}
+            target="_blank"
+            rel="noopener noreferrer"
             className="mt-4 inline-flex items-center gap-1 text-xs font-medium text-[var(--kp-brand-deep)] transition hover:underline"
           >
             查看详情
             <ExternalLink className="h-3 w-3" />
-          </Link>
+          </a>
         )}
       </div>
     </motion.div>
+  );
+}
+
+function ContentsSection({ contents }: { contents: AboutProfile["contents"] }) {
+  return (
+    <section className="relative z-10 px-[5%] py-20 md:px-[8%]">
+      <SectionHeader eyebrow="Contents" title="输出与内容" />
+      <div className="grid gap-4 md:grid-cols-2">
+        {contents.map((item, i) => (
+          <motion.div
+            key={item.title}
+            initial={{ opacity: 0, y: 20 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true, margin: "-60px" }}
+            transition={{ duration: 0.6, delay: i * 0.06, ease: easeOut }}
+            className="group flex items-start gap-4 rounded-2xl border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)]/70 p-5 backdrop-blur-md transition hover:border-[var(--kp-brand-light)]"
+          >
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[var(--kp-accent-soft)] text-[var(--kp-accent-deep)]">
+              <BookOpen className="h-5 w-5" />
+            </div>
+            <div className="flex-1">
+              <div className="mb-1 flex items-center gap-2">
+                <h3 className="font-semibold text-[var(--kp-text-1)]">{item.title}</h3>
+                <span className="rounded-full bg-[var(--kp-bg)] px-2 py-0.5 text-[10px] text-[var(--kp-text-3)]">
+                  {item.type}
+                </span>
+              </div>
+              <p className="text-sm text-[var(--kp-text-2)]">{item.description}</p>
+              {item.url && (
+                <a
+                  href={item.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-[var(--kp-brand-deep)] transition hover:underline"
+                >
+                  查看
+                  <ExternalLink className="h-3 w-3" />
+                </a>
+              )}
+            </div>
+          </motion.div>
+        ))}
+      </div>
+    </section>
   );
 }
 
@@ -615,21 +661,7 @@ function StorySection({ bodyMarkdown }: { bodyMarkdown: string }) {
   return (
     <section id="story" className="relative z-10 px-[5%] py-20 md:px-[8%]">
       <div className="mx-auto max-w-4xl">
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true, margin: "-60px" }}
-          transition={{ duration: 0.7, ease: easeOut }}
-          className="mb-10"
-        >
-          <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--kp-accent)]">
-            Story
-          </p>
-          <h2 className="text-3xl font-bold tracking-tight text-[var(--kp-text-1)] md:text-4xl">
-            更碎的自述
-          </h2>
-        </motion.div>
-
+        <SectionHeader eyebrow="Story" title="更碎的自述" />
         <motion.div
           initial={{ opacity: 0, y: 24 }}
           whileInView={{ opacity: 1, y: 0 }}
@@ -639,6 +671,32 @@ function StorySection({ bodyMarkdown }: { bodyMarkdown: string }) {
         >
           <PostContent content={bodyMarkdown} />
         </motion.div>
+      </div>
+    </section>
+  );
+}
+
+function PhilosophySection({ philosophy }: { philosophy: AboutProfile["philosophy"] }) {
+  return (
+    <section className="relative z-10 px-[5%] py-20 md:px-[8%]">
+      <SectionHeader eyebrow="Philosophy" title="一些偏见" />
+      <div className="grid gap-5 md:grid-cols-2">
+        {philosophy.map((item, i) => (
+          <motion.div
+            key={item.title}
+            initial={{ opacity: 0, y: 24 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true, margin: "-60px" }}
+            transition={{ duration: 0.7, delay: i * 0.08, ease: easeOut }}
+            className="rounded-3xl border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)]/70 p-6 backdrop-blur-md transition hover:border-[var(--kp-brand-light)] md:p-7"
+          >
+            <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-xl bg-[var(--kp-brand-soft)] text-[var(--kp-brand-deep)]">
+              <Lightbulb className="h-5 w-5" />
+            </div>
+            <h3 className="mb-3 text-lg font-semibold text-[var(--kp-text-1)]">{item.title}</h3>
+            {item.description && <p className="text-sm leading-relaxed text-[var(--kp-text-2)]">{item.description}</p>}
+          </motion.div>
+        ))}
       </div>
     </section>
   );
@@ -662,7 +720,7 @@ function FooterCta({ profile }: { profile: AboutProfile }) {
             想聊聊？
           </h2>
           <p className="mx-auto mt-4 max-w-lg text-[var(--kp-text-2)]">
-            通过 Agent 聊天、GitHub 或邮件都可以。本页源文件在{" "}
+            通过 Agent 聊天、GitHub 或小红书都可以。本页源文件在{" "}
             <code className="rounded bg-[var(--kp-bg)]/60 px-1.5 py-0.5 text-xs">content/about/profile.md</code>。
           </p>
           <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
@@ -688,5 +746,22 @@ function FooterCta({ profile }: { profile: AboutProfile }) {
         </div>
       </motion.div>
     </section>
+  );
+}
+
+function SectionHeader({ eyebrow, title }: { eyebrow: string; title: string }) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      whileInView={{ opacity: 1, y: 0 }}
+      viewport={{ once: true, margin: "-60px" }}
+      transition={{ duration: 0.7, ease: easeOut }}
+      className="mb-10"
+    >
+      <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--kp-accent)]">
+        {eyebrow}
+      </p>
+      <h2 className="text-3xl font-bold tracking-tight text-[var(--kp-text-1)] md:text-4xl">{title}</h2>
+    </motion.div>
   );
 }

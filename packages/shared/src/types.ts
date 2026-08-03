@@ -459,13 +459,26 @@ export interface AboutProfile {
   name: string;
   title: string;
   tagline: string;
+  oneLiner: string;
   location: string;
   github: string;
   site: string;
   email: string;
-  focus: string[];
-  stack: string[];
-  projects: Array<{ name: string; description: string; href?: string }>;
-  philosophy: string[];
+  focus: Array<{ title: string; description: string }>;
+  roles: string[];
+  stack: Array<{ category: string; items: string[] }>;
+  timeline: Array<{ period: string; title: string; description: string; tag?: string }>;
+  projects: Array<{
+    name: string;
+    tagline: string;
+    description: string;
+    stack: string[];
+    href?: string;
+    highlight?: string;
+  }>;
+  contents: Array<{ title: string; type: string; description: string; url?: string }>;
+  toolbox: Array<{ category: string; items: string[] }>;
+  philosophy: Array<{ title: string; description: string }>;
   bodyMarkdown: string;
+  socials: Array<{ platform: string; url: string }>;
 }

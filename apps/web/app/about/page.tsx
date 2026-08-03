@@ -13,15 +13,21 @@ const FALLBACK_PROFILE: AboutProfile = {
   name: "应知序",
   title: "粗鄙 · 偏颇 · 还有点梦想",
   tagline: "写代码不是目的，做出东西才是。",
+  oneLiner: "正在造一个本地优先的 AI 数字花园。",
   location: "",
   github: "https://github.com/SingularGuyLeBorn",
   site: "",
   email: "",
   focus: [],
+  roles: [],
   stack: [],
+  timeline: [],
   projects: [],
+  contents: [],
+  toolbox: [],
   philosophy: [],
   bodyMarkdown: "About profile 暂不可用，请确认后端已启动。",
+  socials: [],
 };
 
 export default async function AboutPage() {
