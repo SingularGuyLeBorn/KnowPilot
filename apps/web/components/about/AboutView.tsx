@@ -41,6 +41,7 @@ import { ScrollReveal, StaggerContainer, StaggerItem } from "@/components/magicu
 import { HeroSection } from "@/components/about/HeroSection";
 import { SolarSystemScene } from "@/components/about/SolarSystemScene";
 import { BlackHoleScene } from "@/components/about/BlackHoleScene";
+import { SeasideCanvas } from "@/components/about/SeasideCanvas";
 import { OasisMindLogo } from "@/lib/icons";
 import { cn } from "@/lib/utils";
 
@@ -431,89 +432,17 @@ export function AboutView({ profile }: { profile: AboutProfile }) {
 
 function CosmicFooter() {
   return (
-    <section className="relative mt-6 overflow-hidden rounded-2xl border border-[var(--kp-divider)]">
-      <style>{`
-        @keyframes cosmic-shift {
-          0%, 100% { transform: translate(0%, 0%) scale(1); }
-          33% { transform: translate(8%, -6%) scale(1.08); }
-          66% { transform: translate(-6%, 8%) scale(0.96); }
-        }
-        @keyframes cosmic-float {
-          0%, 100% { transform: translateY(0); }
-          50% { transform: translateY(-10px); }
-        }
-        @keyframes star-twinkle {
-          0%, 100% { opacity: 0.25; transform: scale(0.7); }
-          50% { opacity: 1; transform: scale(1.3); }
-        }
-        .cosmic-blob { animation: cosmic-shift 20s ease-in-out infinite; }
-        .cosmic-blob-delayed { animation: cosmic-shift 24s ease-in-out infinite reverse; }
-        .cosmic-float { animation: cosmic-float 7s ease-in-out infinite; }
-        .cosmic-star { animation: star-twinkle 4s ease-in-out infinite; }
-      `}</style>
-      <svg
-        className="absolute inset-0 h-full w-full"
-        preserveAspectRatio="xMidYMid slice"
-        viewBox="0 0 800 240"
-        xmlns="http://www.w3.org/2000/svg"
-        aria-hidden
-      >
-        <defs>
-          <linearGradient id="space-bg" x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" stopColor="var(--kp-bg)" />
-            <stop offset="100%" stopColor="var(--kp-bg-alt)" />
-          </linearGradient>
-          <radialGradient id="nebula-1" cx="30%" cy="30%" r="70%">
-            <stop offset="0%" stopColor="rgba(var(--kp-accent-rgb), 0.22)" />
-            <stop offset="60%" stopColor="rgba(var(--kp-accent-rgb), 0.05)" />
-            <stop offset="100%" stopColor="transparent" />
-          </radialGradient>
-          <radialGradient id="nebula-2" cx="70%" cy="70%" r="70%">
-            <stop offset="0%" stopColor="rgba(var(--kp-brand-rgb), 0.20)" />
-            <stop offset="60%" stopColor="rgba(var(--kp-brand-rgb), 0.04)" />
-            <stop offset="100%" stopColor="transparent" />
-          </radialGradient>
-          <filter id="glow">
-            <feGaussianBlur stdDeviation="2.5" result="coloredBlur" />
-            <feMerge>
-              <feMergeNode in="coloredBlur" />
-              <feMergeNode in="SourceGraphic" />
-            </feMerge>
-          </filter>
-        </defs>
-        <rect width="800" height="240" fill="url(#space-bg)" />
-        <circle className="cosmic-blob" cx="180" cy="80" r="140" fill="url(#nebula-1)" />
-        <circle className="cosmic-blob-delayed" cx="620" cy="160" r="160" fill="url(#nebula-2)" />
-        <g fill="var(--kp-text-3)" opacity="0.6">
-          <circle className="cosmic-star" cx="60" cy="40" r="1.2" />
-          <circle className="cosmic-star" style={{ animationDelay: "-1.2s" }} cx="720" cy="50" r="1.5" />
-          <circle className="cosmic-star" style={{ animationDelay: "-2.5s" }} cx="140" cy="180" r="1" />
-          <circle className="cosmic-star" style={{ animationDelay: "-0.8s" }} cx="680" cy="190" r="1.3" />
-          <circle className="cosmic-star" style={{ animationDelay: "-3.1s" }} cx="400" cy="30" r="0.9" />
-          <circle className="cosmic-star" style={{ animationDelay: "-1.9s" }} cx="520" cy="120" r="1.1" />
-          <circle className="cosmic-star" style={{ animationDelay: "-2.7s" }} cx="260" cy="100" r="1" />
-          <circle className="cosmic-star" style={{ animationDelay: "-0.4s" }} cx="780" cy="140" r="1.2" />
-        </g>
-        <path
-          d="M-50 200 Q 200 160 400 190 T 850 180"
-          fill="none"
-          stroke="rgba(var(--kp-brand-rgb), 0.12)"
-          strokeWidth="2"
-          className="cosmic-blob"
-        />
-      </svg>
-      <div className="relative z-10 flex flex-col items-center justify-center px-6 py-12 text-center md:py-16">
-        <p className="cosmic-float text-2xl font-black tracking-tight text-[var(--kp-text-1)] md:text-3xl lg:text-4xl">
+    <section className="relative mt-6 h-[320px] overflow-hidden rounded-2xl border border-[var(--kp-divider)] md:h-[420px]">
+      <SeasideCanvas />
+      <div className="relative z-10 flex h-full flex-col items-center justify-center px-6 py-10 text-center">
+        <p className="text-2xl font-black tracking-tight text-white drop-shadow md:text-3xl lg:text-4xl">
           我们的征途是星辰大海
         </p>
-        <p className="mt-2 text-sm font-medium text-[var(--kp-text-2)] md:text-base">
-          在这之前不妨去海边搞点薯条
+        <p className="mt-2 text-sm font-bold text-white/90 drop-shadow md:text-base">
+          这个世界太你妈坏了 卧槽
         </p>
-        <p
-          className="mt-4 max-w-2xl font-serif text-[11px] leading-relaxed tracking-widest text-[var(--kp-text-3)] opacity-60 md:text-xs"
-          dir="ltr"
-        >
-          Ο δρόμος μας είναι το απέραντο διάστημα· πριν φτάσουμε εκεί, ας πάρουμε μερικές τηγανητές πατάτες στην ακτή.
+        <p className="mt-1 text-sm font-medium text-white/80 drop-shadow md:text-base">
+          所以，不如先去海边搞点薯条
         </p>
       </div>
     </section>
