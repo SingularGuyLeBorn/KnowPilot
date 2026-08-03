@@ -123,7 +123,7 @@ function parseTimeline(block: string): AboutProfile["timeline"] {
 
   let current: Partial<AboutProfile["timeline"][number]> = {};
   for (const line of block.split("\n").map((l) => l.trimEnd())) {
-    const periodMatch = line.match(/^\s*-\s*(\d{4}[^：:]*)[:：]\s*(.+)$/);
+    const periodMatch = line.match(/^\s*-\s*([^：:\n]+)[:：]\s*(.+)$/);
     if (periodMatch) {
       if (current.period && current.title) items.push(current as AboutProfile["timeline"][number]);
       const rest = periodMatch[2].trim();
