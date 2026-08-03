@@ -276,7 +276,7 @@ export function AboutView({ profile }: { profile: AboutProfile }) {
                   <StaggerItem key={card.title}>
                     <div className="kp-card-dense flex h-full flex-col p-4">
                       <SectionHeader icon={<Icon className="h-4 w-4" />} title={card.title} className="mb-2" />
-                      <div className="line-clamp-5 text-xs leading-relaxed text-[var(--kp-text-2)]">
+                      <div className="text-xs leading-relaxed text-[var(--kp-text-2)]">
                         <StoryMarkdown>{card.body}</StoryMarkdown>
                       </div>
                     </div>
