@@ -21,6 +21,7 @@ kind: procedural
 | 步骤 | 工具 |
 |------|------|
 | 网页广搜 | `web_search` |
+| arXiv 检索 | `search_arxiv` |
 | 学术检索 | `literature_search`（openalex / arxiv / semantic_scholar / all） |
 | arXiv 全文获取 | `fetch_arxiv`（arXiv ID）→ `download_file` 下载 PDF |
 | 单篇详情 | `literature_get`（DOI / arXiv id） |

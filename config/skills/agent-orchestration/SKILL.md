@@ -47,6 +47,7 @@ spawn_subagent({ task: "阶段1：收集原始资料", waitForResult: false })
 // 适合：批量下载、格式转换、大量文件处理、定时轮询
 async_task_run({
   steps: [
+    { tool: "search_arxiv", args: { query: "attention mechanism", max_results: 10 } },
     { tool: "web_search", args: {...} },
     { tool: "read_article", args: {...} },
     { tool: "write_file", args: {...} }
@@ -77,6 +78,7 @@ async_task_run({
 // 1. 发起后台任务（不阻塞主会话）
 const taskId = async_task_run({
   steps: [
+    { tool: "search_arxiv", args: { query: "attention mechanism", max_results: 10 } },
     { tool: "web_search", args: { query: "..." } },
     { tool: "read_article", args: { url: "...", offset: 0 } },
     { tool: "read_article", args: { url: "...", offset: 5000 } },

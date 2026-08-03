@@ -2,7 +2,7 @@
 name: "arxiv-fetch-process"
 description: "arxiv-fetch-process"
 icon: "Sparkles"
-trigger: null
+trigger: "/arxiv-fetch-process"
 enabled: true
 kind: procedural
 ---
@@ -18,6 +18,7 @@ kind: procedural
 
 | 步骤 | 工具 | 关键参数 |
 |------|------|----------|
+| 0. 搜索论文（可选） | `search_arxiv` | `query` 关键词，`max_results` 限制条数 |
 | 1. 元数据+PDF链接 | `fetch_arxiv` | `id` = `2305.12345v2` 或 `abs/2305.12345` |
 | 2. 下载 PDF 到 Workspace | `download_file` | `url` = fetch_arxiv 返回的 `pdf_url`，`filename` 建议 `arxiv-{id}.pdf` |
 | 3. PDF → Markdown | `document_to_markdown` | `file_path` = 上一步保存路径 |
