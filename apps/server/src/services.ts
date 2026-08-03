@@ -23,6 +23,7 @@ import type { AppEventBus } from "./infra/eventBus.js";
 import type { AppConfig } from "./infra/config.js";
 import { upsertFtsRow, deleteFtsRow } from "./infra/ftsIndex.js";
 import { assertPathWithinProjectRoot } from "./infra/safePath.js";
+import { validateOutputContent, formatValidationErrors } from "./infra/outputValidator.js";
 
 /* ─── 1. 辅助类型与基类 ─── */
 
@@ -373,7 +374,15 @@ export abstract class FileSyncService<
     const filePath = this.resolveEntityFilePath(this.getFileSlug(entity));
     const fileDir = path.dirname(filePath);
     if (!fs.existsSync(fileDir)) fs.mkdirSync(fileDir, { recursive: true });
-    fs.writeFileSync(filePath, this.serializeToFile(entity), "utf-8");
+    const content = this.serializeToFile(entity);
+    const relPath = path.relative(this.config.projectRoot, filePath).replace(/\\/g, "/");
+    const validation = validateOutputContent(relPath, content);
+    if (!validation.ok) {
+      throw new Error(
+        `${this.entityName} 输出验证未通过，未落盘：\n${formatValidationErrors(validation.errors!)}`,
+      );
+    }
+    fs.writeFileSync(filePath, content, "utf-8");
   }
 
   protected deleteFile(entity: TEntity): void {

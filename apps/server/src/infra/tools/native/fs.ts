@@ -22,6 +22,7 @@ import {
 import type { ToolRollback } from "../types.js";
 import type { NativeToolContext, NativeToolDefinition } from "./types.js";
 import { registerNativeDomain } from "./registerDomain.js";
+import { validateOutputContent, formatValidationErrors } from "../../outputValidator.js";
 
 /** content/ 写入白名单：仅 uploads；其余 content/（含动态花园与 about）禁 write_file */
 const CONTENT_WRITE_PREFIXES = ["content/uploads/"] as const;
@@ -173,6 +174,15 @@ async function writeFileTool(args: Record<string, unknown>, ctx: NativeToolConte
   const content = String(args.content ?? "");
   const bytes = Buffer.byteLength(content, "utf8");
   assertWriteSizeAllowed("write_file", bytes);
+  const validation = validateOutputContent(relForReturn, content);
+  if (!validation.ok) {
+    return {
+      success: false,
+      path: relForReturn,
+      error: `输出验证未通过，未落盘：\n${formatValidationErrors(validation.errors!)}`,
+      validationErrors: validation.errors,
+    };
+  }
   const dir = path.dirname(abs);
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(abs, content, "utf8");
@@ -184,6 +194,15 @@ async function appendToFileTool(args: Record<string, unknown>, ctx: NativeToolCo
   const content = String(args.content ?? "");
   const bytes = Buffer.byteLength(content, "utf8");
   assertWriteSizeAllowed("append_to_file", bytes);
+  const validation = validateOutputContent(relForReturn, content);
+  if (!validation.ok) {
+    return {
+      success: false,
+      path: relForReturn,
+      error: `输出验证未通过，未落盘：\n${formatValidationErrors(validation.errors!)}`,
+      validationErrors: validation.errors,
+    };
+  }
   const dir = path.dirname(abs);
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
   fs.appendFileSync(abs, content, "utf8");
