@@ -274,6 +274,17 @@ export async function setDefaultChannelSession(
   });
 }
 
+export async function findChannelBindingBySessionId(
+  prisma: PrismaClient,
+  sessionId: string,
+): Promise<ChannelBindingRow | null> {
+  const row = await prisma.channelBinding.findFirst({
+    where: { sessionId },
+    orderBy: { lastMessageAt: "desc" },
+  });
+  return row ? ({ ...row, chatId: row.chatId || null } as ChannelBindingRow) : null;
+}
+
 export async function deleteChannelBinding(prisma: PrismaClient, id: string): Promise<boolean> {
   const n = await prisma.channelBinding.deleteMany({ where: { id } });
   return n.count > 0;

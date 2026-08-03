@@ -8,7 +8,7 @@
  * 5. 产生 UnifiedMessage 并通过 MessageGateway 路由
  */
 
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import { createOneBotAdapter, loadOneBotConfigFromEnv } from "../infra/channels/onebotBot.js";
 import { initMessageGateway, __resetMessageGatewayForTests } from "../infra/messageGateway.js";
 import { prisma } from "../db.js";
@@ -250,5 +250,87 @@ describe("OneBot v11 Channel Adapter", () => {
       message: [{ type: "image", data: { url: "http://example.com/a.png" } }],
     });
     expect(res.ok).toBe(true);
+  });
+
+  it("reply 自动提取 Markdown 图片并作为 image segment 发送", async () => {
+    const adapter = createOneBotAdapter({
+      httpUrl: "http://127.0.0.1:3000",
+      accessToken: "",
+      secret: "",
+      enabled: true,
+      allowedUsers: ["12345678"],
+      allowedGroups: [],
+      groupMessageTypes: ["text"],
+      groupRequireAt: true,
+    }) as any;
+
+    const sendMock = vi.fn().mockResolvedValue({ message_id: 42 });
+    adapter.sendOneBotApi = sendMock;
+
+    await adapter.reply(
+      {
+        envelope: { channel: "onebot", peerId: "12345678", timestamp: new Date().toISOString() },
+        payload: { text: "" },
+        meta: { eventId: "msg-img-1" },
+      },
+      {
+        text: "这是生成的图：![生成图](/uploads/test.png)。正文继续。",
+        finish: true,
+      },
+    );
+
+    expect(sendMock).toHaveBeenCalledTimes(1);
+    const call = sendMock.mock.calls[0];
+    expect(call[0]).toBe("/send_private_msg");
+    const message = call[1].message;
+    expect(Array.isArray(message)).toBe(true);
+    expect(message).toHaveLength(2);
+    expect(message[0].type).toBe("text");
+    expect(message[1].type).toBe("image");
+    expect(message[1].data.file).toContain("uploads/test.png");
+  });
+
+  it("sendImage 发送私聊图片", async () => {
+    const adapter = createOneBotAdapter({
+      httpUrl: "http://127.0.0.1:3000",
+      accessToken: "",
+      secret: "",
+      enabled: true,
+      allowedUsers: [],
+      allowedGroups: [],
+      groupMessageTypes: ["text"],
+      groupRequireAt: true,
+    }) as any;
+
+    const sendMock = vi.fn().mockResolvedValue({ message_id: 43 });
+    adapter.sendOneBotApi = sendMock;
+
+    await adapter.sendImage({ userId: "12345678", file: "content/uploads/a.png" });
+    expect(sendMock).toHaveBeenCalledWith("/send_private_msg", {
+      user_id: 12345678,
+      message: [{ type: "image", data: { file: expect.stringContaining("content/uploads/a.png") } }],
+    });
+  });
+
+  it("sendVideo 发送群视频", async () => {
+    const adapter = createOneBotAdapter({
+      httpUrl: "http://127.0.0.1:3000",
+      accessToken: "",
+      secret: "",
+      enabled: true,
+      allowedUsers: [],
+      allowedGroups: [],
+      groupMessageTypes: ["text"],
+      groupRequireAt: true,
+    }) as any;
+
+    const sendMock = vi.fn().mockResolvedValue({ message_id: 44 });
+    adapter.sendOneBotApi = sendMock;
+
+    await adapter.sendVideo({ groupId: "222222", file: "https://example.com/a.mp4" });
+    expect(sendMock).toHaveBeenCalledWith("/send_group_msg", {
+      group_id: 222222,
+      message: [{ type: "video", data: { file: "https://example.com/a.mp4" } }],
+    });
   });
 });

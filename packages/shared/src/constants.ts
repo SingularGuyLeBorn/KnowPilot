@@ -826,6 +826,8 @@ export const TIER_DEFAULT_TOOLS: Record<AgentTier, string[]> = {
     "native:pinme_upload",
     "native:skills_list",
     "native:skill_view",
+    "native:send_qq_image",
+    "native:send_qq_video",
   ],
 };
 
@@ -935,6 +937,8 @@ export const ASSISTANT_DEFAULT_TOOLS: string[] = [
   "native:inbox_distill",
   "native:inbox_ignore",
   "native:pinme_upload",
+  "native:send_qq_image",
+  "native:send_qq_video",
 ];
 
 /* ─── 知识库花园（动态 N 座） ───

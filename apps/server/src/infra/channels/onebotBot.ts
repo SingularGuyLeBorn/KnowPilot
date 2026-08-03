@@ -51,6 +51,42 @@ async function saveOneBotImageLocally(url: string): Promise<string | null> {
   }
 }
 
+/** 把项目内相对路径（如 /uploads/xxx.png）转成绝对路径，供 OneBot 本地文件发送 */
+function resolveOneBotFilePath(input: string): string {
+  if (!input || typeof input !== "string") return "";
+  if (/^https?:\/\//i.test(input)) return input;
+  const projectRoot = process.env.PROJECT_ROOT || path.resolve(process.cwd().includes("apps") ? path.join(process.cwd(), "../..") : process.cwd());
+  let rel = input;
+  if (rel.startsWith("/")) rel = rel.slice(1);
+  return path.resolve(projectRoot, rel).replace(/\\/g, "/");
+}
+
+/** 从 Markdown/文本中提取要发送的图片 URL/路径 */
+function extractImageUrlsFromMarkdown(text: string): string[] {
+  const urls: string[] = [];
+  const regex = /!\[[^\]]*\]\(([^)]+)\)/g;
+  let match: RegExpExecArray | null;
+  while ((match = regex.exec(text)) !== null) {
+    if (match[1]) urls.push(match[1]);
+  }
+  return urls;
+}
+
+/** 从文本中移除 Markdown 图片语法，保留 alt 文本作为纯文本提示 */
+function stripMarkdownImages(text: string): string {
+  return text.replace(/!\[([^\]]*)\]\([^)]+\)/g, (__, alt) => (alt ? `[图片：${alt}]` : ""));
+}
+
+export type OneBotMediaType = "image" | "video";
+
+export type OneBotMediaPayload = {
+  userId?: string | number;
+  groupId?: string | number;
+  file: string;
+  caption?: string;
+  type: OneBotMediaType;
+};
+
 export type OneBotMessageType = "text" | "image" | "at" | "reply" | "file" | "other";
 
 export type OneBotConfig = {
@@ -316,31 +352,12 @@ export function createOneBotAdapter(cfg: OneBotConfig): ChannelAdapter {
     return { ok: true as const };
   };
 
-  const sendOneBotApi = async (endpoint: string, payload: Record<string, unknown>) => {
-    if (!cfg.httpUrl) throw new Error("OneBot HTTP URL 未配置");
-    const baseUrl = cfg.httpUrl.endsWith("/") ? cfg.httpUrl.slice(0, -1) : cfg.httpUrl;
-    const headers: Record<string, string> = { "Content-Type": "application/json" };
-    if (cfg.accessToken) {
-      headers["Authorization"] = `Bearer ${cfg.accessToken}`;
-    }
-
-    const res = await fetch(`${baseUrl}${endpoint}`, {
-      method: "POST",
-      headers,
-      body: JSON.stringify(payload),
-    });
-
-    if (!res.ok) {
-      const text = await res.text().catch(() => "");
-      throw new Error(`OneBot API ${endpoint} HTTP ${res.status}: ${text.slice(0, 200)}`);
-    }
-
-    return await res.json().catch(() => ({}));
-  };
-
   const adapter: ChannelAdapter & {
     ingestWebhookPayload: typeof ingestWebhookPayload;
-    sendOneBotApi: typeof sendOneBotApi;
+    sendOneBotApi: (endpoint: string, payload: Record<string, unknown>) => Promise<unknown>;
+    sendImage: (payload: Omit<OneBotMediaPayload, "type">) => Promise<unknown>;
+    sendVideo: (payload: Omit<OneBotMediaPayload, "type">) => Promise<unknown>;
+    sendOneBotMedia: (payload: OneBotMediaPayload) => Promise<unknown>;
   } = {
     channel: "onebot",
     name: "OneBot v11 (NapCatQQ / LLOneBot)",
@@ -356,7 +373,9 @@ export function createOneBotAdapter(cfg: OneBotConfig): ChannelAdapter {
       lastError = undefined;
       if (cfg.qqAccount) {
         try {
-          const info = await sendOneBotApi("/get_login_info", {});
+          const info = (await adapter.sendOneBotApi("/get_login_info", {})) as {
+    data?: { user_id?: string | number; self_id?: string | number };
+  };
           const selfId = String(info.data?.user_id ?? info.data?.self_id ?? "");
           if (selfId && selfId !== cfg.qqAccount) {
             throw new Error(`当前登录账号 ${selfId} 与配置 ${cfg.qqAccount} 不匹配`);
@@ -375,7 +394,52 @@ export function createOneBotAdapter(cfg: OneBotConfig): ChannelAdapter {
     stop: async () => {
       state = "disconnected";
     },
-    reply: async (msg, chunk: ChannelReplyChunk) => {
+    sendOneBotApi: async (endpoint: string, payload: Record<string, unknown>) => {
+      if (!cfg.httpUrl) throw new Error("OneBot HTTP URL 未配置");
+      const baseUrl = cfg.httpUrl.endsWith("/") ? cfg.httpUrl.slice(0, -1) : cfg.httpUrl;
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (cfg.accessToken) {
+        headers["Authorization"] = `Bearer ${cfg.accessToken}`;
+      }
+
+      const res = await fetch(`${baseUrl}${endpoint}`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(payload),
+      });
+
+      if (!res.ok) {
+        const text = await res.text().catch(() => "");
+        throw new Error(`OneBot API ${endpoint} HTTP ${res.status}: ${text.slice(0, 200)}`);
+      }
+
+      return await res.json().catch(() => ({}));
+    },
+    sendOneBotMedia: async function (payload: OneBotMediaPayload) {
+      if (!cfg.enabled) throw new Error("OneBot 适配器未启用");
+      const target = payload.groupId ?? payload.userId;
+      if (!target) throw new Error("发送图片/视频需要指定 userId 或 groupId");
+      const filePath = resolveOneBotFilePath(payload.file);
+      if (!filePath) throw new Error("file 参数为空");
+      const segment = { type: payload.type, data: { file: filePath } };
+      if (payload.groupId) {
+        return this.sendOneBotApi("/send_group_msg", {
+          group_id: Number(payload.groupId) || payload.groupId,
+          message: [segment],
+        });
+      }
+      return this.sendOneBotApi("/send_private_msg", {
+        user_id: Number(payload.userId) || payload.userId,
+        message: [segment],
+      });
+    },
+    sendImage: async function (payload: Omit<OneBotMediaPayload, "type">) {
+      return this.sendOneBotMedia({ ...payload, type: "image" });
+    },
+    sendVideo: async function (payload: Omit<OneBotMediaPayload, "type">) {
+      return this.sendOneBotMedia({ ...payload, type: "video" });
+    },
+    reply: async function (msg: UnifiedMessage, chunk: ChannelReplyChunk) {
       // 只发送最终完整回复；QQ 不适合流式分片刷屏，中间 chunk 全部忽略。
       if (!chunk.finish) return;
 
@@ -411,7 +475,11 @@ export function createOneBotAdapter(cfg: OneBotConfig): ChannelAdapter {
 
       const reasoning = chunk.reasoning?.trim();
       const plainReasoning = reasoning ? mdToPlain(reasoning) : "";
-      const plainAnswer = mdToPlain(chunk.text) || "（空回复）";
+
+      // 提取 Markdown 图片，先发送图片，再发送纯文本（避免消息过长被截断后图片发不出去）
+      const imageUrls = extractImageUrlsFromMarkdown(chunk.text);
+      const textWithoutImages = stripMarkdownImages(chunk.text);
+      const plainAnswer = mdToPlain(textWithoutImages) || "（空回复）";
 
       // 预算：总长度上限 5000，thinking 最多 1500，剩余给正文
       const MAX_TOTAL = 5000;
@@ -423,31 +491,41 @@ export function createOneBotAdapter(cfg: OneBotConfig): ChannelAdapter {
         ? `<thinking>\n${reasoningPart}\n</thinking>\n\n${answerPart}`
         : answerPart;
 
+      const textSegments = content ? [{ type: "text", data: { text: content } }] : [];
+      const imageSegments = imageUrls.map((url) => ({
+        type: "image",
+        data: { file: resolveOneBotFilePath(url) },
+      }));
+
+      const buildMessage = () => {
+        if (imageSegments.length === 0) return content;
+        return [...textSegments, ...imageSegments];
+      };
+
       if (ctx.isGroup && ctx.groupId) {
-        await sendOneBotApi("/send_group_msg", {
+        const message = imageSegments.length > 0
+          ? [{ type: "reply", data: { id: ctx.msgId } }, ...textSegments, ...imageSegments]
+          : content;
+        await this.sendOneBotApi("/send_group_msg", {
           group_id: Number(ctx.groupId) || ctx.groupId,
-          message: [
-            { type: "reply", data: { id: ctx.msgId } },
-            { type: "text", data: { text: content } },
-          ],
+          message,
         }).catch(async () => {
           // 备用降级：发纯文本
-          await sendOneBotApi("/send_group_msg", {
+          await this.sendOneBotApi("/send_group_msg", {
             group_id: Number(ctx.groupId) || ctx.groupId,
             message: content,
           });
         });
       } else {
-        await sendOneBotApi("/send_private_msg", {
+        await this.sendOneBotApi("/send_private_msg", {
           user_id: Number(ctx.userId) || ctx.userId,
-          message: content,
+          message: buildMessage(),
         });
       }
 
       replyCtx.delete(msg.meta.eventId);
     },
     ingestWebhookPayload,
-    sendOneBotApi,
   };
 
   return adapter;

@@ -475,4 +475,6 @@ export const ALL_NATIVE_TOOL_NAMES = [
   "swanlab_run_metrics",
   "swanlab_run_series",
   "swanlab_scaffold_train",
+  "send_qq_image",
+  "send_qq_video",
 ] as const;

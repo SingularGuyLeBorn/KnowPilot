@@ -21,6 +21,7 @@ import { registerMediaSttTools } from "./mediaStt.js";
 import { registerAgentCronTools } from "./agentCron.js";
 import { registerLiteratureTools } from "./literature.js";
 import { registerDocumentTools } from "./document.js";
+import { registerQqTools } from "./qq.js";
 
 export function registerNativeDomains(): void {
   registerFsTools();
@@ -41,6 +42,7 @@ export function registerNativeDomains(): void {
   registerAgentCronTools();
   registerLiteratureTools();
   registerDocumentTools();
+  registerQqTools();
 }
 
 export type { NativeToolContext, NativeToolDefinition, NativeToolHandler } from "./types.js";
