@@ -211,6 +211,35 @@ html.dark,
   --radius-4xl: calc(var(--radius) * 2.6);
 }
 
+@theme inline {
+  --animate-orbit: orbit calc(var(--duration) * 1s) linear infinite;
+  --animate-shine: shine var(--duration) infinite linear;
+
+  @keyframes orbit {
+    0% {
+      transform: rotate(calc(var(--angle) * 1deg))
+        translateY(calc(var(--radius) * 1px)) rotate(calc(var(--angle) * -1deg));
+    }
+    100% {
+      transform: rotate(calc(var(--angle) * 1deg + 360deg))
+        translateY(calc(var(--radius) * 1px))
+        rotate(calc((var(--angle) * -1deg) - 360deg));
+    }
+  }
+
+  @keyframes shine {
+    0% {
+      background-position: 0% 0%;
+    }
+    50% {
+      background-position: 100% 100%;
+    }
+    100% {
+      background-position: 0% 0%;
+    }
+  }
+}
+
 /* 主题由 ThemeProvider 在客户端通过 .dark 类切换；shadcn/ui tokens 同步覆盖 */
 
 body {

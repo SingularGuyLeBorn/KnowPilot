@@ -1,6 +1,7 @@
 "use client";
 
 import { Bot, FileText, FolderKanban, Zap } from "lucide-react";
+import { NumberTicker } from "@/components/magicui/number-ticker";
 
 export function StatsStrip({
   postCount,
@@ -30,10 +31,20 @@ function StatTile({
   value: number | string;
   label: string;
 }) {
+  const isNumber = typeof value === "number";
   return (
-    <div className="flex flex-col items-center gap-2 px-4 py-6 text-center transition-colors hover:bg-[var(--kp-bg-alt)]/60">
-      <Icon className="h-6 w-6 text-[var(--kp-brand-deep)]" />
-      <div className="text-2xl font-bold text-[var(--kp-text-1)]">{value}</div>
+    <div className="group flex flex-col items-center gap-2 px-4 py-6 text-center transition-colors hover:bg-[var(--kp-bg-alt)]/60">
+      <Icon className="h-6 w-6 text-[var(--kp-brand-deep)] transition-transform group-hover:scale-110" />
+      <div className="bg-gradient-to-br from-[var(--kp-text-1)] to-[var(--kp-brand-light)] bg-clip-text text-2xl font-bold tabular-nums text-transparent">
+        {isNumber ? (
+          <NumberTicker
+            value={value}
+            className="bg-gradient-to-br from-[var(--kp-text-1)] to-[var(--kp-brand-light)] bg-clip-text text-transparent"
+          />
+        ) : (
+          value
+        )}
+      </div>
       <div className="text-xs uppercase tracking-wider text-[var(--kp-text-3)]">{label}</div>
     </div>
   );

@@ -17,9 +17,10 @@ import {
   Wand2,
 } from "lucide-react";
 import { OasisMindLogo } from "@/lib/icons";
+import { OrbitingCircles } from "@/components/magicui/orbiting-circles";
 
-const BlackHoleScene = dynamic(
-  () => import("@/components/home/BlackHoleScene").then((m) => m.BlackHoleScene),
+const Particles = dynamic(
+  () => import("@/components/magicui/particles").then((m) => m.Particles),
   { ssr: false, loading: () => <div className="h-full w-full" aria-hidden /> },
 );
 
@@ -34,10 +35,20 @@ export function HeroSection({
 }) {
   return (
     <section className="dark relative flex min-h-[100dvh] items-center overflow-hidden bg-[var(--kp-bg)] px-[5%] py-20 md:px-[8%] lg:px-[10%]">
-      {/* WebGL 背景：黑洞；在深色画布上才能显影 */}
+      {/* 动态粒子背景：随鼠标轻微移动 */}
       <div className="pointer-events-none absolute inset-0">
-        <BlackHoleScene className="h-full w-full" />
-        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_0%_50%,var(--kp-bg)_0%,transparent_60%)]" />
+        <Particles
+          className="h-full w-full"
+          quantity={80}
+          size={0.5}
+          staticity={30}
+          ease={40}
+          color="#4ad8c4"
+          vx={0.2}
+          vy={0.2}
+          refresh={false}
+        />
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_0%_50%,var(--kp-bg)_0%,transparent_55%)]" />
         <div className="absolute inset-x-0 bottom-0 h-40 bg-gradient-to-t from-[var(--kp-bg)] to-transparent" />
       </div>
 
@@ -97,14 +108,30 @@ export function HeroSection({
           </div>
         </motion.div>
 
-        {/* 右侧装饰性 SVG 面板：与黑洞形成呼应 */}
+        {/* 右侧：旋转轨道图标 */}
         <motion.div
           initial={{ opacity: 0, scale: 0.92 }}
           animate={{ opacity: 1, scale: 1 }}
           transition={{ duration: 1.2, delay: 0.2, ease: easeSpring }}
-          className="relative hidden items-center justify-center lg:flex"
+          className="relative hidden h-[420px] w-[420px] items-center justify-center lg:flex"
         >
-          <OrbitingModules />
+          <OrbitingCircles radius={180} iconSize={44} duration={30} path>
+            <OrbitingIcon icon={BookOpen} label="博客" />
+            <OrbitingIcon icon={Bot} label="Agent" />
+            <OrbitingIcon icon={Wand2} label="Skills" />
+            <OrbitingIcon icon={Code2} label="代码" />
+          </OrbitingCircles>
+          <OrbitingCircles
+            radius={120}
+            iconSize={36}
+            duration={22}
+            reverse
+            path={false}
+          >
+            <OrbitingIcon icon={Sparkles} small />
+            <OrbitingIcon icon={ArrowRight} small />
+            <OrbitingIcon icon={HardDrive} small />
+          </OrbitingCircles>
         </motion.div>
       </div>
     </section>
@@ -129,42 +156,26 @@ function StatPill({
   );
 }
 
-function OrbitingModules() {
-  const items = [
-    { icon: BookOpen, label: "博客", angle: 0 },
-    { icon: Bot, label: "Agent", angle: 90 },
-    { icon: Wand2, label: "Skills", angle: 180 },
-    { icon: Code2, label: "代码", angle: 270 },
-  ];
+function OrbitingIcon({
+  icon: Icon,
+  label,
+  small,
+}: {
+  icon: React.ComponentType<{ className?: string }>;
+  label?: string;
+  small?: boolean;
+}) {
   return (
-    <div className="relative h-[420px] w-[420px]">
-      <div className="absolute inset-0 rounded-full border border-[var(--kp-divider)]" />
-      <div className="absolute inset-[15%] rounded-full border border-dashed border-[var(--kp-divider)]" />
-      <div className="absolute inset-[30%] rounded-full border border-[var(--kp-divider)]/50" />
-      <div className="absolute left-1/2 top-1/2 h-20 w-20 -translate-x-1/2 -translate-y-1/2 rounded-full bg-gradient-to-br from-[var(--kp-brand)] to-[var(--kp-accent)] opacity-80 blur-xl" />
-      <div className="absolute left-1/2 top-1/2 flex h-12 w-12 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-[var(--kp-bg-alt)] shadow-xl">
-        <Sparkles className="h-6 w-6 text-[var(--kp-brand-light)]" />
+    <div className="group flex flex-col items-center gap-1">
+      <div
+        className={[
+          "flex items-center justify-center rounded-xl border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)]/90 shadow-lg backdrop-blur-md transition-transform group-hover:scale-110",
+          small ? "h-9 w-9" : "h-11 w-11",
+        ].join(" ")}
+      >
+        <Icon className={small ? "h-4 w-4 text-[var(--kp-brand-light)]" : "h-5 w-5 text-[var(--kp-accent)]"} />
       </div>
-      {items.map((item) => {
-        const rad = (item.angle * Math.PI) / 180;
-        const x = 50 + Math.cos(rad) * 42;
-        const y = 50 + Math.sin(rad) * 42;
-        return (
-          <motion.div
-            key={item.label}
-            initial={{ opacity: 0, scale: 0.8 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ duration: 0.6, delay: 0.8 + item.angle / 360 }}
-            className="absolute flex flex-col items-center gap-1"
-            style={{ left: `${x}%`, top: `${y}%`, transform: "translate(-50%, -50%)" }}
-          >
-            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-[var(--kp-bg-alt)]/80 shadow-lg backdrop-blur-md">
-              <item.icon className="h-5 w-5 text-[var(--kp-accent)]" />
-            </div>
-            <span className="text-xs font-medium text-[var(--kp-text-2)]">{item.label}</span>
-          </motion.div>
-        );
-      })}
+      {label && <span className="text-[10px] font-medium text-[var(--kp-text-3)]">{label}</span>}
     </div>
   );
 }
