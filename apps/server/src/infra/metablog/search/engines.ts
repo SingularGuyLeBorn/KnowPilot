@@ -540,21 +540,32 @@ function parseDuckDuckGoHtml(html: string, limit: number): SearchResult[] {
   return results;
 }
 
-// ==================== 9. SearXNG 公共实例 ====================
+// ==================== 9. SearXNG 元搜索引擎 ====================
 /**
  * SearXNG 元搜索引擎(完全免费,无需 API Key)
- * 使用公共实例列表中的可用实例
+ * 优先使用本地/自托管实例(SEARXNG_URL),未配置时回退到公共实例列表
  * 文档: https://docs.searxng.org/dev/search_api.html
  */
 
+import { getEnv } from "../env.js";
+
 // 国内/亚洲可用的 SearXNG 公共实例(定期更新)
-const SEARXNG_INSTANCES = [
+const SEARXNG_PUBLIC_INSTANCES = [
   "https://search.sapti.me",
   "https://searx.be",
   "https://search.bus-hit.me",
   "https://searx.tiekoetter.com",
   "https://search.mdosch.de",
 ];
+
+function getSearXNGInstances(): string[] {
+  const localUrl = getEnv("SEARXNG_URL", "").trim();
+  if (localUrl) {
+    // 本地实例优先,末尾保留公共实例作为兜底
+    return [localUrl.replace(/\/$/, ""), ...SEARXNG_PUBLIC_INSTANCES];
+  }
+  return SEARXNG_PUBLIC_INSTANCES;
+}
 
 /**
  * 搜索SearXNG
@@ -565,11 +576,14 @@ const SEARXNG_INSTANCES = [
  */
 export async function searchSearXNG(query: string, limit: number): Promise<SearchResult[]> {
   const errors: string[] = [];
+  const instances = getSearXNGInstances();
 
-  // 随机打乱实例顺序,避免集中访问同一个
-  const shuffled = [...SEARXNG_INSTANCES].sort(() => Math.random() - 0.5);
+  // 本地实例(若配置)优先,其余公共实例随机打乱避免集中访问
+  const localInstance = getEnv("SEARXNG_URL", "").trim().replace(/\/$/, "");
+  const publicInstances = instances.filter((u) => u !== localInstance).sort(() => Math.random() - 0.5);
+  const ordered = localInstance ? [localInstance, ...publicInstances] : publicInstances;
 
-  for (const instance of shuffled) {
+  for (const instance of ordered) {
     try {
       const url = new URL(`${instance}/search`);
       url.searchParams.set("q", query);

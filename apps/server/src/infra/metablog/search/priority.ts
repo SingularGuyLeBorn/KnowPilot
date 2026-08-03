@@ -24,6 +24,8 @@ export interface SearchPriorityOptions {
   hasTavily?: boolean;
   hasSerpApi?: boolean;
   hasBaiduQianfan?: boolean;
+  /** 配置了本地 SearXNG 实例(SEARXNG_URL)时优先使用 */
+  hasSearXNGLocal?: boolean;
 }
 
 /** 解析最终引擎尝试顺序（env 多值优先；单值原样；无 env 则智能默认） */
@@ -37,6 +39,23 @@ export function resolveSearchEnginePriority(opts: SearchPriorityOptions): Search
   }
   if (raw) {
     return [raw as SearchEngineName];
+  }
+
+  // 本地 SearXNG 实例配置时,优先作为第一梯队;无 Key 爬虫兜底,API Key 殿后
+  if (opts.hasSearXNGLocal) {
+    return dedupePriority([
+      "searxng",
+      "bing_crawler",
+      "duckduckgo",
+      "baidu_qianfan",
+      "tavily",
+      "metaso",
+      "bocha",
+      "langsearch",
+      "serpapi",
+      "brave",
+      "bing",
+    ]);
   }
 
   if (opts.hasTavily) {
@@ -86,6 +105,7 @@ export interface SearchKeyFlags {
   tavilyApiKey?: string;
   serpApiKey?: string;
   baiduQianfanApiKey?: string;
+  searxngUrl?: string;
 }
 
 /** 从 AppConfig.search 生成运行时 SEARCH_ENGINE_PRIORITY 字符串 */
@@ -102,5 +122,6 @@ export function buildEffectiveSearchPriorityString(flags: SearchKeyFlags): strin
     hasTavily,
     hasSerpApi: !!(flags.serpApiKey && flags.serpApiKey.length > 5),
     hasBaiduQianfan: !!(flags.baiduQianfanApiKey && flags.baiduQianfanApiKey.length > 5),
+    hasSearXNGLocal: !!(flags.searxngUrl && flags.searxngUrl.length > 5),
   }).join(",");
 }

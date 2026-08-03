@@ -56,6 +56,7 @@ function initEngineConfigs(): Map<SearchEngineName, SearchEngineConfig> {
     hasTavily: !!getApiKeyForEngine("tavily"),
     hasSerpApi: !!getApiKeyForEngine("serpapi"),
     hasBaiduQianfan: !!getApiKeyForEngine("baidu_qianfan"),
+    hasSearXNGLocal: !!env("SEARXNG_URL"),
   });
 
   if (priorityList.length === 0) {

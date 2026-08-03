@@ -60,6 +60,21 @@ services:
     volumes:
       - redisdata:/data
 
+  # SearXNG — 本地轻量元搜索引擎（web_search 免费/通用后端）
+  # 启用：docker compose --profile searxng up -d
+  # 配置 SEARXNG_URL=http://127.0.0.1:8080 后，smartSearch 优先走本地实例
+  searxng:
+    image: searxng/searxng:latest
+    container_name: knowpilot-searxng
+    restart: unless-stopped
+    profiles: ["searxng"]
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./searxng/settings.yml:/etc/searxng/settings.yml:ro
+    environment:
+      SEARXNG_BASE_URL: http://127.0.0.1:8080/
+
   # Cloudflare Tunnel — 远程安全访问（无需开放公网端口）
   # 启用：docker compose --profile cloudflare up -d cloudflare
   # 需先设置 CLOUDFLARE_TUNNEL_TOKEN 环境变量

@@ -1,0 +1,23 @@
+use_default_settings: true
+
+server:
+  secret_key: "knowpilot-searxng-local-dev-change-me"
+  bind_address: "0.0.0.0"
+  port: 8080
+
+search:
+  safe_search: 0
+  autocomplete: "duckduckgo"
+
+ui:
+  static_use_hash: true
+
+result_proxy:
+  url: ""
+
+outgoing:
+  request_timeout: 10.0
+  max_request_timeout: 15.0
+  pool_connections: 100
+  pool_maxsize: 20
+  enable_http2: true
