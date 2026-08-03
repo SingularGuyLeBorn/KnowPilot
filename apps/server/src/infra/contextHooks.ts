@@ -19,6 +19,7 @@ import {
   buildAgentToolGuide,
   buildTierIdentityHint,
 } from "./promptBuilder.js";
+import { getConstraintEvolutionBlock, injectConstraintBlock } from "./constraintEvolution.js";
 
 const SLOW_HOOK_MS = 500;
 
@@ -222,6 +223,17 @@ export function ensureBuiltinContextHooks(): void {
       } catch {
         // ignore
       }
+    },
+  });
+
+  registerContextHook({
+    name: "constraint-evolution",
+    order: 150,
+    enabled: roundOneOnly,
+    run: (input) => {
+      const block = getConstraintEvolutionBlock(input.agent.id, input.ctx.config);
+      if (!block) return;
+      return { systemPrompt: injectConstraintBlock(input.systemPrompt, block) };
     },
   });
 

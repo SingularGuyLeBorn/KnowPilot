@@ -22,7 +22,7 @@ import {
 import type { ToolRollback } from "../types.js";
 import type { NativeToolContext, NativeToolDefinition } from "./types.js";
 import { registerNativeDomain } from "./registerDomain.js";
-import { validateOutputContent, formatValidationErrors } from "../../outputValidator.js";
+import { validateOutputForAgent, formatValidationErrors } from "../../outputValidator.js";
 
 /** content/ 写入白名单：仅 uploads；其余 content/（含动态花园与 about）禁 write_file */
 const CONTENT_WRITE_PREFIXES = ["content/uploads/"] as const;
@@ -174,7 +174,7 @@ async function writeFileTool(args: Record<string, unknown>, ctx: NativeToolConte
   const content = String(args.content ?? "");
   const bytes = Buffer.byteLength(content, "utf8");
   assertWriteSizeAllowed("write_file", bytes);
-  const validation = validateOutputContent(relForReturn, content);
+  const validation = validateOutputForAgent(relForReturn, content, ctx.agentSnapshot?.id, ctx.config);
   if (!validation.ok) {
     return {
       success: false,
@@ -194,7 +194,7 @@ async function appendToFileTool(args: Record<string, unknown>, ctx: NativeToolCo
   const content = String(args.content ?? "");
   const bytes = Buffer.byteLength(content, "utf8");
   assertWriteSizeAllowed("append_to_file", bytes);
-  const validation = validateOutputContent(relForReturn, content);
+  const validation = validateOutputForAgent(relForReturn, content, ctx.agentSnapshot?.id, ctx.config);
   if (!validation.ok) {
     return {
       success: false,

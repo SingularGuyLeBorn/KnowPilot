@@ -21,6 +21,7 @@ import { zodParams } from "./zodParams.js";
 import type { ToolRollback } from "../types.js";
 import type { NativeToolContext, NativeToolDefinition, NativeToolHandler } from "./types.js";
 import { registerNativeDomain } from "./registerDomain.js";
+import { validateOutputForAgent, formatValidationErrors } from "../../outputValidator.js";
 
 /** 花园 id：仅格式校验；存在性由 GardenService / PostService 负责 */
 function parseGardenArg(raw: unknown): string {
@@ -125,11 +126,28 @@ async function postCreateTool(args: Record<string, unknown>, ctx: NativeToolCont
   const title = String(args.title || "").trim();
   if (!title) throw new Error("title 不能为空");
   const garden = parseGardenArg(args.garden);
+  const content = String(args.content ?? "");
+  const slug = args.slug ? String(args.slug) : undefined;
+  // 输出校验：用合成 frontmatter（title 来自参数）验证最终落盘文件
+  const syntheticContent = `---\ntitle: ${JSON.stringify(title)}\n---\n\n${content}`;
+  const validation = validateOutputForAgent(
+    `content/${garden}/${slug ?? "article"}.md`,
+    syntheticContent,
+    ctx.agentSnapshot?.id,
+    ctx.config,
+  );
+  if (!validation.ok) {
+    return {
+      success: false,
+      error: `输出验证未通过，文章未创建：\n${formatValidationErrors(validation.errors!)}`,
+      validationErrors: validation.errors,
+    };
+  }
   const input = {
     title,
     garden,
-    content: String(args.content ?? ""),
-    slug: args.slug ? String(args.slug) : undefined,
+    content,
+    slug,
     excerpt: args.excerpt ? String(args.excerpt) : undefined,
     coverImage: args.coverImage ? String(args.coverImage) : null,
     category: args.category ? String(args.category) : null,
@@ -151,12 +169,32 @@ async function postCreateTool(args: Record<string, unknown>, ctx: NativeToolCont
 async function postUpdateTool(args: Record<string, unknown>, ctx: NativeToolContext) {
   const id = String(args.id || "").trim();
   if (!id) throw new Error("id 不能为空");
+  const content = args.content !== undefined ? String(args.content) : undefined;
+  const garden = args.garden !== undefined ? parseGardenArg(args.garden) : undefined;
+  const slug = args.slug !== undefined ? String(args.slug) : undefined;
+  if (content !== undefined) {
+    const updateTitle = args.title !== undefined ? String(args.title) : " ";
+    const syntheticContent = `---\ntitle: ${JSON.stringify(updateTitle)}\n---\n\n${content}`;
+    const validation = validateOutputForAgent(
+      `content/${garden ?? "posts"}/${slug ?? "article"}.md`,
+      syntheticContent,
+      ctx.agentSnapshot?.id,
+      ctx.config,
+    );
+    if (!validation.ok) {
+      return {
+        success: false,
+        error: `输出验证未通过，文章未更新：\n${formatValidationErrors(validation.errors!)}`,
+        validationErrors: validation.errors,
+      };
+    }
+  }
   const input = {
     id,
     title: args.title !== undefined ? String(args.title) : undefined,
-    content: args.content !== undefined ? String(args.content) : undefined,
-    garden: args.garden !== undefined ? parseGardenArg(args.garden) : undefined,
-    slug: args.slug !== undefined ? String(args.slug) : undefined,
+    content,
+    garden,
+    slug,
     excerpt: args.excerpt !== undefined ? String(args.excerpt) : undefined,
     coverImage: args.coverImage !== undefined ? (args.coverImage ? String(args.coverImage) : null) : undefined,
     category: args.category !== undefined ? (args.category ? String(args.category) : null) : undefined,
@@ -226,6 +264,19 @@ async function postListTool(args: Record<string, unknown>, ctx: NativeToolContex
 async function memoryCreateTool(args: Record<string, unknown>, ctx: NativeToolContext) {
   const content = String(args.content || "").trim();
   if (!content) throw new Error("content 不能为空");
+  const validation = validateOutputForAgent(
+    "config/memories/memory.md",
+    content,
+    ctx.agentSnapshot?.id,
+    ctx.config,
+  );
+  if (!validation.ok) {
+    return {
+      success: false,
+      error: `输出验证未通过，记忆未创建：\n${formatValidationErrors(validation.errors!)}`,
+      validationErrors: validation.errors,
+    };
+  }
   const strength = Number(args.strength ?? 1);
   const rawType = args.type ? String(args.type) : "note";
   if (!isMemoryUserCreatable(rawType)) {
@@ -359,6 +410,19 @@ async function memoryUpdateTool(args: Record<string, unknown>, ctx: NativeToolCo
   const content = String(args.content || "").trim();
   if (!id) throw new Error("id 不能为空");
   if (!content) throw new Error("content 不能为空");
+  const validation = validateOutputForAgent(
+    "config/memories/memory.md",
+    content,
+    ctx.agentSnapshot?.id,
+    ctx.config,
+  );
+  if (!validation.ok) {
+    return {
+      success: false,
+      error: `输出验证未通过，记忆未更新：\n${formatValidationErrors(validation.errors!)}`,
+      validationErrors: validation.errors,
+    };
+  }
   const rawType = args.type !== undefined ? String(args.type) : undefined;
   if (rawType !== undefined && !isMemoryUserCreatable(rawType)) {
     throw new Error(

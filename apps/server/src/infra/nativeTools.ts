@@ -9,6 +9,7 @@
 
 import { DEFAULT_AGENT_NATIVE } from "@knowpilot/shared";
 import { checkToolPermission } from "./swarmPermissionGuard.js";
+import { recordViolation } from "./constraintEvolution.js";
 import { hasMockNativeTool, executeMockNativeTool } from "./mockNativeTools.js";
 import { getTool, listTools } from "./tools/registry.js";
 import type { NativeToolContext, NativeToolDefinition } from "./tools/native/types.js";
@@ -76,6 +77,12 @@ export async function executeNativeTool(
       inToolRound: ctx.inToolRound ?? false,
     });
     if (permError) {
+      recordViolation(
+        ctx.agentSnapshot.id,
+        permError.code,
+        { toolName: name, message: permError.reason },
+        ctx.config,
+      );
       return {
         error: `[${permError.code}] ${permError.reason}`,
         permissionDenied: true,

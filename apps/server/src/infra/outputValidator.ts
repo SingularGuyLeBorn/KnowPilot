@@ -10,6 +10,8 @@
 import * as ts from "typescript";
 import matter from "gray-matter";
 import path from "path";
+import { recordViolation } from "./constraintEvolution.js";
+import type { AppConfig } from "./config.js";
 
 export interface OutputValidationError {
   code: string;
@@ -229,6 +231,26 @@ function validateTypeScript(filePath: string, content: string): OutputValidation
   }
 
   return errors;
+}
+
+/**
+ * 带 Agent 身份的校验入口。
+ * 校验失败时除返回错误外，还会把错误码记录到该 Agent 的约束进化账本。
+ * 如不希望记录（例如测试无 Agent 场景），可继续用纯函数 validateOutputContent。
+ */
+export function validateOutputForAgent(
+  filePath: string,
+  content: string,
+  agentId: string | null | undefined,
+  config?: AppConfig,
+): OutputValidationResult {
+  const result = validateOutputContent(filePath, content);
+  if (!result.ok && agentId) {
+    for (const err of result.errors ?? []) {
+      recordViolation(agentId, err.code, { filePath, message: err.message }, config);
+    }
+  }
+  return result;
 }
 
 /**
