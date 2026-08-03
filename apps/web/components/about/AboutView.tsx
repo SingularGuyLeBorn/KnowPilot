@@ -4,26 +4,41 @@ import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import Link from "next/link";
 import {
+  Archive,
   ArrowUpRight,
-  BookOpen,
+  BarChart3,
+  Blocks,
+  Brain,
+  Briefcase,
+  Bug,
+  Compass,
   Cpu,
+  Eye,
+  Gamepad2,
   Github,
-  Lightbulb,
+  GraduationCap,
+  Heart,
+  Layers,
   Mail,
   MessageSquare,
+  Network,
+  Newspaper,
   Rocket,
   Sparkles,
   Target,
+  Terminal,
+  User,
   Wand2,
 } from "lucide-react";
 import type { AboutProfile } from "@knowpilot/shared";
 import { NumberTicker } from "@/components/magicui/number-ticker";
 import { ScrollReveal, StaggerContainer, StaggerItem } from "@/components/magicui/scroll-reveal";
 import { HeroSection } from "@/components/about/HeroSection";
+import { OasisMindLogo } from "@/lib/icons";
 import { trpc } from "@/lib/trpc";
+import { cn } from "@/lib/utils";
 
 const easeSpring = [0.22, 1, 0.36, 1] as const;
-const PHILOSOPHY_ICONS = [Lightbulb, Target, Sparkles, Rocket, BookOpen];
 
 function parseStoryCards(bodyMarkdown: string) {
   const cards: { title: string; description: string }[] = [];
@@ -44,10 +59,68 @@ function parseStoryCards(bodyMarkdown: string) {
   return cards.slice(0, 4);
 }
 
+function storyIcon(title: string) {
+  if (title.includes("我是谁")) return User;
+  if (title.includes("做什么")) return Briefcase;
+  if (title.includes("为什么")) return Heart;
+  if (title.includes("技术")) return Cpu;
+  return Compass;
+}
+
+function philosophyIcon(title: string) {
+  if (title.includes("做出东西")) return Rocket;
+  if (title.includes("可控")) return Eye;
+  if (title.includes("多收")) return Archive;
+  if (title.includes("梦想")) return Sparkles;
+  return Compass;
+}
+
 function gradientFromTitle(title: string) {
   let hash = 0;
   for (let i = 0; i < title.length; i++) hash = (hash * 31 + title.charCodeAt(i)) % 360;
   return `linear-gradient(135deg, hsl(${hash} 26% 80%), hsl(${(hash + 45) % 360} 28% 72%))`;
+}
+
+function projectIcon(name: string) {
+  if (name.includes("见微") || name.includes("OasisMind")) {
+    return { type: "logo" as const };
+  }
+  if (name.includes("PubCrawler")) return { type: "lucide" as const, Icon: Bug };
+  if (name.includes("CS336")) return { type: "lucide" as const, Icon: GraduationCap };
+  if (name.includes("LLM")) return { type: "lucide" as const, Icon: Brain };
+  if (name.includes("go-game")) return { type: "lucide" as const, Icon: Gamepad2 };
+  if (name.includes("xhs")) return { type: "lucide" as const, Icon: BarChart3 };
+  if (name.includes("wechat")) return { type: "lucide" as const, Icon: Terminal };
+  if (name.includes("Transformer")) return { type: "lucide" as const, Icon: Network };
+  if (name.includes("Daily")) return { type: "lucide" as const, Icon: Newspaper };
+  if (name.includes("MetaBlog")) return { type: "lucide" as const, Icon: Blocks };
+  return { type: "lucide" as const, Icon: Layers };
+}
+
+function SectionHeader({
+  icon,
+  title,
+  className,
+  iconClassName,
+}: {
+  icon: React.ReactNode;
+  title: string;
+  className?: string;
+  iconClassName?: string;
+}) {
+  return (
+    <div className={cn("flex items-start gap-2.5", className)}>
+      <div
+        className={cn(
+          "flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-[var(--kp-brand-soft)] text-[var(--kp-brand-deep)]",
+          iconClassName,
+        )}
+      >
+        {icon}
+      </div>
+      <h3 className="mt-0.5 text-sm font-bold text-[var(--kp-text-1)]">{title}</h3>
+    </div>
+  );
 }
 
 export function AboutView({ profile }: { profile: AboutProfile }) {
@@ -103,17 +176,17 @@ export function AboutView({ profile }: { profile: AboutProfile }) {
               <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--kp-accent)]">Story</p>
             </ScrollReveal>
             <StaggerContainer className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-              {storyCards.map((card) => (
-                <StaggerItem key={card.title}>
-                  <div className="kp-card-dense flex h-full flex-col p-4">
-                    <div className="mb-2 flex h-8 w-8 items-center justify-center rounded-lg bg-[var(--kp-brand-soft)] text-[var(--kp-brand-deep)]">
-                      <BookOpen className="h-4 w-4" />
+              {storyCards.map((card) => {
+                const Icon = storyIcon(card.title);
+                return (
+                  <StaggerItem key={card.title}>
+                    <div className="kp-card-dense flex h-full flex-col p-4">
+                      <SectionHeader icon={<Icon className="h-4 w-4" />} title={card.title} className="mb-2" />
+                      <p className="text-xs leading-relaxed text-[var(--kp-text-2)]">{card.description}</p>
                     </div>
-                    <h3 className="mb-1 text-sm font-bold text-[var(--kp-text-1)]">{card.title}</h3>
-                    <p className="text-xs leading-relaxed text-[var(--kp-text-2)]">{card.description}</p>
-                  </div>
-                </StaggerItem>
-              ))}
+                  </StaggerItem>
+                );
+              })}
             </StaggerContainer>
           </section>
         )}
@@ -124,15 +197,12 @@ export function AboutView({ profile }: { profile: AboutProfile }) {
             <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--kp-accent)]">Philosophy</p>
           </ScrollReveal>
           <StaggerContainer className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            {profile.philosophy.map((item, i) => {
-              const Icon = PHILOSOPHY_ICONS[i % PHILOSOPHY_ICONS.length];
+            {profile.philosophy.map((item) => {
+              const Icon = philosophyIcon(item.title);
               return (
                 <StaggerItem key={item.title}>
                   <div className="kp-card-dense flex h-full flex-col p-4">
-                    <div className="mb-2 flex h-8 w-8 items-center justify-center rounded-lg bg-[var(--kp-accent-soft)] text-[var(--kp-accent-deep)]">
-                      <Icon className="h-4 w-4" />
-                    </div>
-                    <h3 className="mb-1 text-sm font-bold text-[var(--kp-text-1)]">{item.title}</h3>
+                    <SectionHeader icon={<Icon className="h-4 w-4" />} title={item.title} className="mb-2" />
                     <p className="text-xs leading-relaxed text-[var(--kp-text-2)]">{item.description}</p>
                   </div>
                 </StaggerItem>
@@ -141,7 +211,7 @@ export function AboutView({ profile }: { profile: AboutProfile }) {
           </StaggerContainer>
         </section>
 
-        {/* Focus + Stack + Toolbox + Now */}
+        {/* Focus + Stack + Toolbox */}
         <section className="mb-6">
           <ScrollReveal className="mb-3">
             <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--kp-accent)]">Profile</p>
@@ -149,13 +219,10 @@ export function AboutView({ profile }: { profile: AboutProfile }) {
           <StaggerContainer className="grid grid-cols-1 gap-3 lg:grid-cols-3">
             <StaggerItem className="lg:col-span-1">
               <div className="kp-card-dense h-full p-4">
-                <div className="mb-2 flex h-8 w-8 items-center justify-center rounded-lg bg-[var(--kp-accent-soft)] text-[var(--kp-accent-deep)]">
-                  <Target className="h-4 w-4" />
-                </div>
-                <h3 className="mb-2 text-sm font-bold text-[var(--kp-text-1)]">关注方向</h3>
-                <div className="flex flex-col gap-2">
+                <SectionHeader icon={<Target className="h-4 w-4" />} title="关注方向" className="mb-2" />
+                <div className="flex flex-col gap-1.5">
                   {profile.focus.map((f) => (
-                    <div key={f.title} className="rounded-lg border border-[var(--kp-divider)] bg-[var(--kp-bg)]/60 p-2">
+                    <div key={f.title} className="rounded-md border border-[var(--kp-divider)] bg-[var(--kp-bg)]/60 px-2 py-1.5">
                       <div className="text-xs font-bold text-[var(--kp-text-1)]">{f.title.replace(/^\*\*([^*]+)\*\*/, "$1")}</div>
                       <div className="mt-0.5 text-[11px] leading-relaxed text-[var(--kp-text-2)]">{f.description}</div>
                     </div>
@@ -166,13 +233,10 @@ export function AboutView({ profile }: { profile: AboutProfile }) {
 
             <StaggerItem className="lg:col-span-1">
               <div className="kp-card-dense h-full p-4">
-                <div className="mb-2 flex h-8 w-8 items-center justify-center rounded-lg bg-[var(--kp-brand-soft)] text-[var(--kp-brand-deep)]">
-                  <Cpu className="h-4 w-4" />
-                </div>
-                <h3 className="mb-2 text-sm font-bold text-[var(--kp-text-1)]">技术栈</h3>
-                <div className="grid grid-cols-1 gap-2">
+                <SectionHeader icon={<Cpu className="h-4 w-4" />} title="技术栈" className="mb-2" />
+                <div className="flex flex-col gap-1.5">
                   {profile.stack.map((g) => (
-                    <div key={g.category} className="rounded-lg border border-[var(--kp-divider)] bg-[var(--kp-bg)]/60 p-2">
+                    <div key={g.category} className="rounded-md border border-[var(--kp-divider)] bg-[var(--kp-bg)]/60 px-2 py-1.5">
                       <div className="text-[11px] font-bold text-[var(--kp-text-1)]">{g.category}</div>
                       <div className="mt-0.5 text-[10px] leading-relaxed text-[var(--kp-text-3)]">{g.items.slice(0, 5).join(" · ")}</div>
                     </div>
@@ -183,13 +247,10 @@ export function AboutView({ profile }: { profile: AboutProfile }) {
 
             <StaggerItem className="lg:col-span-1">
               <div className="kp-card-dense h-full p-4">
-                <div className="mb-2 flex h-8 w-8 items-center justify-center rounded-lg bg-[var(--kp-brand-soft)] text-[var(--kp-brand-deep)]">
-                  <Wand2 className="h-4 w-4" />
-                </div>
-                <h3 className="mb-2 text-sm font-bold text-[var(--kp-text-1)]">现在用的工具</h3>
-                <div className="grid grid-cols-1 gap-2">
+                <SectionHeader icon={<Wand2 className="h-4 w-4" />} title="现在用的工具" className="mb-2" />
+                <div className="flex flex-col gap-1.5">
                   {profile.toolbox.map((g) => (
-                    <div key={g.category} className="rounded-lg border border-[var(--kp-divider)] bg-[var(--kp-bg)]/60 p-2">
+                    <div key={g.category} className="rounded-md border border-[var(--kp-divider)] bg-[var(--kp-bg)]/60 px-2 py-1.5">
                       <div className="text-[11px] font-bold text-[var(--kp-text-1)]">{g.category}</div>
                       <div className="mt-0.5 text-[10px] leading-relaxed text-[var(--kp-text-3)]">{g.items.slice(0, 6).join(" · ")}</div>
                     </div>
@@ -286,18 +347,28 @@ export function AboutView({ profile }: { profile: AboutProfile }) {
 }
 
 function ProjectCard({ project }: { project: AboutProfile["projects"][number] }) {
-  const className = "kp-card-dense flex h-full flex-col overflow-hidden";
+  const className = "kp-card-dense relative flex h-full flex-col overflow-hidden";
+  const iconDef = projectIcon(project.name);
+  const iconNode =
+    iconDef.type === "logo" ? (
+      <OasisMindLogo size={18} variant="ink-seed" />
+    ) : (
+      <iconDef.Icon className="h-4 w-4" />
+    );
+
   const body = (
     <>
       <div
-        className="h-24 w-full bg-cover bg-center transition-transform duration-500 group-hover:scale-105"
+        className="pointer-events-none absolute inset-0 opacity-[0.07] transition-transform duration-500 group-hover:scale-105"
         style={{ backgroundImage: gradientFromTitle(project.name) }}
       />
-      <div className="flex flex-1 flex-col p-3">
-        <div className="mb-1.5 flex items-center justify-between gap-2">
-          <h3 className="text-sm font-bold text-[var(--kp-text-1)] transition-colors group-hover:text-[var(--kp-accent-deep)]">
-            {project.name}
-          </h3>
+      <div className="relative flex flex-1 flex-col p-3">
+        <div className="mb-1.5 flex items-start justify-between gap-2">
+          <SectionHeader
+            icon={iconNode}
+            title={project.name}
+            className="min-w-0"
+          />
           {project.highlight && (
             <span className="shrink-0 rounded-full bg-[var(--kp-accent-soft)] px-2 py-0.5 text-[10px] font-bold text-[var(--kp-accent-deep)]">
               {project.highlight}
