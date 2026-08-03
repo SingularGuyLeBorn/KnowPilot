@@ -474,7 +474,7 @@ function ProjectCard({ project }: { project: AboutProfile["projects"][number] })
               </span>
             )}
             {project.href && (
-              <span className="inline-flex items-center gap-0.5 text-[10px] font-medium text-[var(--kp-text-3)] transition-colors group-hover:text-[var(--kp-accent-deep)]">
+              <span className="inline-flex items-center gap-0.5 text-[10px] font-medium text-[var(--kp-text-3)] opacity-0 transition-all group-hover:text-[var(--kp-accent-deep)] group-hover:opacity-100">
                 访问
                 <ArrowUpRight className="h-3 w-3 transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5" />
               </span>
