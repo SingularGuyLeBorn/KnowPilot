@@ -8,6 +8,7 @@
 
 import type { AppConfig } from "./config.js";
 import { type LlmMessage } from "./llmClient.js";
+import { resetContext } from "./loop/contextReset.js";
 import { resilientChatCompletion } from "./resilientLlmClient.js";
 import type { ServiceContainer } from "./serviceContainer.js";
 // type-only：避免运行时循环依赖（agentStream 反向 import maybeCompactMessages）
@@ -124,6 +125,27 @@ export function estimateChars(messages: LlmMessage[]): number {
     const toolsLen = m.tool_calls ? JSON.stringify(m.tool_calls).length : 0;
     return sum + contentLen + toolsLen + 200;
   }, 0);
+}
+
+function getSystemPromptText(messages: LlmMessage[]): string {
+  const sys = messages.find((m) => m.role === "system");
+  if (!sys) return "";
+  return typeof sys.content === "string" ? sys.content : JSON.stringify(sys.content ?? "");
+}
+
+/** 摘要失败/不可用时，用 contextReset 做无 LLM 降级：保留 system + 交接文档 + 最近轮次 */
+function fallbackContextReset(
+  messages: LlmMessage[],
+  model: string,
+  triggerRatio: number,
+): { messages: LlmMessage[]; handoffDoc: string; reset: boolean } {
+  const res = resetContext(messages, {
+    modelId: model,
+    systemPrompt: getSystemPromptText(messages),
+    thresholdRatio: triggerRatio,
+    keepRecentTurns: 1,
+  });
+  return { messages: res.messages, handoffDoc: res.handoffDoc, reset: res.reset };
 }
 
 /** micro-compact：清超大 tool result，延缓触顶（学 Claude Code） */
@@ -276,6 +298,8 @@ export interface CompactResult {
   fileDetails?: CompactFileDetails;
   /** 保留段起点（相对 working messages；迭代摘要用） */
   firstKeptIndex?: number;
+  /** 摘要失败后的降级策略 */
+  fallback?: "trim" | "contextReset";
 }
 
 export interface CompactOptions {
@@ -413,6 +437,27 @@ export async function maybeCompactMessages(
 
     const summaryBody = summary.content?.trim();
     if (!summaryBody) {
+      const reset = fallbackContextReset(working, model, settings.triggerRatio);
+      if (reset.reset) {
+        options?.emit?.({
+          type: "compact_error",
+          message: "摘要 LLM 返回空内容，已降级 Context Reset",
+          fallback: "contextReset",
+          generation,
+        });
+        return {
+          messages: reset.messages,
+          compacted: true,
+          summaryText: reset.handoffDoc,
+          memoriesFlushed,
+          charThresholdUsed: charThreshold,
+          generation,
+          messagesSummarized: toSummarize.length,
+          charBefore,
+          charAfter: estimateChars(reset.messages),
+          fallback: "contextReset",
+        };
+      }
       const trimmed = trimOldestPreservingToolPairs(working, settings.keepRecent);
       options?.emit?.({
         type: "compact_error",
@@ -429,6 +474,7 @@ export async function maybeCompactMessages(
         messagesSummarized: toSummarize.length,
         charBefore,
         charAfter: estimateChars(trimmed),
+        fallback: "trim",
       };
     }
 
@@ -457,7 +503,30 @@ export async function maybeCompactMessages(
       firstKeptIndex: cutIndex,
     };
   } catch (err) {
-    console.warn("[AutoCompact] 压缩失败，降级裁剪最早消息:", err instanceof Error ? err.message : err);
+    console.warn("[AutoCompact] 压缩失败，尝试 Context Reset 降级:", err instanceof Error ? err.message : err);
+    const reset = fallbackContextReset(working, model, settings.triggerRatio);
+    if (reset.reset) {
+      options?.emit?.({
+        type: "compact_error",
+        message: err instanceof Error ? err.message : String(err),
+        fallback: "contextReset",
+        generation,
+      });
+      return {
+        messages: reset.messages,
+        compacted: true,
+        summaryText: reset.handoffDoc,
+        memoriesFlushed,
+        charThresholdUsed: charThreshold,
+        generation,
+        messagesSummarized: toSummarize.length,
+        charBefore,
+        charAfter: estimateChars(reset.messages),
+        fileDetails,
+        firstKeptIndex: cutIndex,
+        fallback: "contextReset",
+      };
+    }
     const trimmed = trimOldestPreservingToolPairs(working, settings.keepRecent);
     options?.emit?.({
       type: "compact_error",
@@ -476,6 +545,7 @@ export async function maybeCompactMessages(
       charAfter: estimateChars(trimmed),
       fileDetails,
       firstKeptIndex: cutIndex,
+      fallback: "trim",
     };
   }
 }

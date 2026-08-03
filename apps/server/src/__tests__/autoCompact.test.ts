@@ -111,14 +111,18 @@ describe("autoCompact", () => {
     expect(spy).not.toHaveBeenCalled();
   });
 
-  it("LLM 失败时降级裁剪最早消息", async () => {
+  it("LLM 失败时降级 Context Reset，保留 system + 交接文档 + 最近对话", async () => {
     spy.mockRejectedValueOnce(new Error("llm down"));
     const messages = longMessages(40, OVER_THRESHOLD_CHARS);
     const result = await maybeCompactMessages(makeConfig({ triggerRatio: 0.05 }), messages, "deepseek-v4-flash");
     expect(result.compacted).toBe(true);
-    expect(result.summaryText).toBeUndefined();
+    expect(result.fallback).toBe("contextReset");
+    expect(result.summaryText).toContain("上下文交接（Context Reset）");
     const nonSystem = result.messages.filter((m) => m.role !== "system");
-    expect(nonSystem.length).toBeLessThanOrEqual(4);
+    // system(0) + 交接文档 user(1) + 最近最多 2 轮
+    expect(nonSystem.length).toBeLessThanOrEqual(3);
+    expect(nonSystem[0]?.role).toBe("user");
+    expect(String(nonSystem[0]?.content)).toContain("上下文交接（Context Reset）");
   });
 
   it("microCompact 截断超大 tool result", () => {

@@ -147,7 +147,7 @@ export type AgentStreamEvent =
       charAfter: number;
       boundaryMessageId?: string;
     }
-  | { type: "compact_error"; message: string; fallback: "trim" | "none"; generation: number }
+  | { type: "compact_error"; message: string; fallback: "trim" | "none" | "contextReset"; generation: number }
   /** Agent 轮换会话：旧会话归档，新会话已创建；focus 仅为请求，由前端闸门决定是否跳 */
   | {
       type: "session_rotated";

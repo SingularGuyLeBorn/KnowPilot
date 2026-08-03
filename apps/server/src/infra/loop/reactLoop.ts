@@ -53,8 +53,6 @@ import { buildSystemPromptSkeleton } from "../promptBuilder.js";
 import { formatTrace } from "../trace.js";
 import { offloadToolResultIfNeeded } from "../toolResultOffload.js";
 import { checkToolLoop, createLoopGuardState } from "./toolLoopGuard.js";
-import { resetContext } from "./contextReset.js";
-
 /** W11：Run.output 活状态快照写回节流间隔（每轮 tool_batch 后至多写一次） */
 const RUN_SNAPSHOT_THROTTLE_MS = 5000;
 
@@ -732,17 +730,8 @@ async function runReactLoopInner(input: ReactLoopInput): Promise<ReactLoopResult
       roundsUsed = round + 1;
       input.hooks?.onRoundStart?.(roundsUsed);
 
-      // P1：上下文利用率监控 + Context Reset。在钩子前触发，避免把旧消息喂给钩子。
-      const resetResult = resetContext(llmMessages, {
-        modelId: snapshot.model,
-        systemPrompt: input.agentMeta?.systemPrompt ?? input.agent.systemPrompt,
-      });
-      if (resetResult.reset) {
-        llmMessages = resetResult.messages;
-        input.hooks?.onProgress?.(
-          `上下文已重置：估算 ${resetResult.estimatedTokens} tokens / 阈值 ${resetResult.threshold} / 窗口 ${resetResult.contextWindow}。保留 system prompt + 交接文档 + 最近对话。`,
-        );
-      }
+      // P1：上下文重置已并入 autoCompact 的降级路径（摘要失败/不可用时走 contextReset）。
+      // 此处不再每轮重复触发，避免与 autoCompact 重复裁剪。
 
       if (machine.phase !== "llm") {
         machine.transition("llm");

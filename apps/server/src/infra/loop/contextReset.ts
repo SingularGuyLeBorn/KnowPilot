@@ -7,6 +7,7 @@
  */
 
 import type { LlmContentPart, LlmMessage } from "../llmClient.js";
+import { isSafeCompactCutIndex } from "../compactCut.js";
 
 export interface ContextResetResult {
   reset: boolean;
@@ -158,29 +159,25 @@ function buildHandoffDoc(opts: {
   return lines.join("\n");
 }
 
-/** 保留 system 与最近的 user/assistant 消息 */
+/** 保留 system 与最近完整对话；切割点绝不落在 tool_call 与 tool_result 之间 */
 function buildResetMessages(
   messages: LlmMessage[],
   handoffDoc: string,
   keepRecentTurns: number,
 ): LlmMessage[] {
-  const system = messages.find((m) => m.role === "system");
-  const next: LlmMessage[] = [];
-  if (system) next.push({ ...system });
-  next.push({ role: "user", content: handoffDoc });
+  const system = messages.filter((m) => m.role === "system");
+  const next: LlmMessage[] = [...system.map((m) => ({ ...m })), { role: "user", content: handoffDoc }];
 
-  // 保留最近 keepRecentTurns 组 user→assistant 对话
-  const recent: LlmMessage[] = [];
-  for (let i = messages.length - 1; i >= 0 && recent.length < keepRecentTurns * 2; i--) {
-    const m = messages[i];
-    if (m.role === "user" || m.role === "assistant") {
-      recent.unshift({ ...m });
-    }
+  const rest = messages.filter((m) => m.role !== "system");
+  const targetKeep = Math.max(0, keepRecentTurns * 2);
+  let cut = Math.max(0, rest.length - targetKeep);
+  // 向旧侧移动直到切点两侧 tool_call/tool_result 成对完整
+  while (cut > 0 && !isSafeCompactCutIndex(rest, cut)) {
+    cut--;
   }
-  // 若 recent 不完整（只有 assistant 没有 user），截断到最近 user 之前
-  const firstUserIdx = recent.findIndex((m) => m.role === "user");
-  const finalRecent = firstUserIdx > 0 ? recent.slice(firstUserIdx) : recent;
-  next.push(...finalRecent);
+  // 若无法找到安全切点，宁可保留全部也不破坏 tool 对
+  const recent = isSafeCompactCutIndex(rest, cut) ? rest.slice(cut) : [...rest];
+  next.push(...recent.map((m) => ({ ...m })));
 
   return next;
 }

@@ -76,7 +76,13 @@ function makeConfig(over?: Partial<AppConfig["compact"]>): AppConfig {
       memoryFlush: { enabled: false, maxFacts: 5 },
       ...over,
     },
-  } as AppConfig;
+    llm: {
+      maxRetries: 0,
+      baseDelayMs: 0,
+      fallbackModels: [],
+      providers: {},
+    },
+  } as unknown as AppConfig;
 }
 
 describe("P0-03 trimOldestPreservingToolPairs", () => {
