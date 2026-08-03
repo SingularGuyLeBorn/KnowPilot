@@ -4,34 +4,6 @@
   </p>
   <img src="docs/assets/readme-banner.svg" alt="见微 · OasisMind" width="100%">
 
-  <p align="center">
-    <strong>见微 · OasisMind</strong><br>
-    见微知著 · 以 Markdown 为原子、AI 为引擎的本地优先数字主力
-  </p>
-
-  <p align="center">
-    <img src="https://img.shields.io/badge/Next.js-16-black?logo=next.js&logoColor=white&color=2d2a26&labelColor=b8a090" alt="Next.js 16">
-    <img src="https://img.shields.io/badge/React-19-61dafb?logo=react&logoColor=white&color=2d2a26&labelColor=b8a090" alt="React 19">
-    <img src="https://img.shields.io/badge/tRPC-11-2596be?logo=trpc&logoColor=white&color=2d2a26&labelColor=b8a090" alt="tRPC 11">
-    <img src="https://img.shields.io/badge/Prisma-6-2d3748?logo=prisma&logoColor=white&color=2d2a26&labelColor=b8a090" alt="Prisma">
-    <img src="https://img.shields.io/badge/SQLite-3-003b57?logo=sqlite&logoColor=white&color=2d2a26&labelColor=b8a090" alt="SQLite">
-    <img src="https://img.shields.io/badge/Tailwind_CSS-v4-06b6d4?logo=tailwindcss&logoColor=white&color=2d2a26&labelColor=b8a090" alt="Tailwind CSS v4">
-    <img src="https://img.shields.io/badge/License-MIT-green?color=2d2a26&labelColor=b8a090" alt="MIT">
-  </p>
-
-  <p align="center">
-    <a href="#为什么做见微">为什么做见微</a> ·
-    <a href="#快速开始">快速开始</a> ·
-    <a href="#核心能力">核心能力</a> ·
-    <a href="#技术栈">技术栈</a> ·
-    <a href="#项目结构">项目结构</a> ·
-    <a href="#架构亮点">架构亮点</a> ·
-    <a href="#路线图">路线图</a> ·
-    <a href="#uih">UIH</a> ·
-    <a href="docs/development/README.md">开发文档</a>
-  </p>
-</div>
-
 ---
 
 ## 为什么做见微
@@ -64,17 +36,18 @@ LLM 领域里，为了对抗 Transformer 的平方复杂度，已经出现了诸
 
 ## 核心能力
 
-| 能力 | 说明 |
-|------|------|
-| <img src="docs/assets/icons/markdown.svg" width="18" align="absmiddle" alt=""> **Markdown 原生** | 文章以 `.md` 文件为单一事实来源，Git 可跟踪。支持 GFM、代码高亮、数学公式、HTML 嵌入、脚注。Milkdown 所见即所得编辑；图片按文章稳定 id 分目录（`content/uploads/{garden}/{postId}/`，草稿走 `_draft/{draftKey}`），改 slug 不断链；上传先占位再替换。 |
-| <img src="docs/assets/icons/ai.svg" width="18" align="absmiddle" alt=""> **AI 核心** | Agent、Skill、MCP Server、Memory、Prompt 全部内置。ReAct + SSE 流式 `/chat`，思考时间线、工具同步/异步标识；三段式 auto-compact（micro → memory flush → macro），`/compact` 与侧栏按钮经 Agent `session_compact` 统一执行。编辑器选区可一键润色 / 精简 / 扩写（Canvas 式改写）。支持本地推理：Ollama / llama.cpp / LM Studio / vLLM（OpenAI 兼容，会话模型 id 形如 `ollama/llama3.2`）。 |
-| <img src="docs/assets/icons/sparkles.svg" width="18" align="absmiddle" alt=""> **Swarm 三层 Agent** | 超级 / 管理 / 子 Agent 三层层级，权限硬拦截、Agent 间消息总线、心跳自主运行、`spawn_subagent` 异步派生与 `report_back`。 |
-| <img src="docs/assets/icons/palette.svg" width="18" align="absmiddle" alt=""> **莫兰迪星河设计** | 暖灰莫兰迪色系 + 玻璃拟态 + Three.js 星空 Hero + Bento 网格。100 个几何 SVG Agent 头像按 id 稳定分配，深浅主题切换。 |
-| <img src="docs/assets/icons/database.svg" width="18" align="absmiddle" alt=""> **本地优先** | 内容先落盘到本地文件，再同步到 SQLite。~22 Service CRUD + 管理页，Markdown ↔ SQLite 双向写回，`db:sync` 支持 `--watch`。 |
-| <img src="docs/assets/icons/wrench.svg" width="18" align="absmiddle" alt=""> **自动化流** | Trigger 事件触发 + Approval 审批拦截 + Agent Loop。异步任务队列 `async_task_run/status`，后台运行结果自动回流对话。 |
-| <img src="docs/assets/icons/map.svg" width="18" align="absmiddle" alt=""> **全局搜索与相关笔记** | FTS5 全文索引 `search.global`，跨文章 / Agent / Skill / Memory / Prompt 统一检索。阅读页 `post.related` 按全文 / 标签 / 花园 / 分类综合推荐邻近笔记。 |
-| <img src="docs/assets/icons/folder.svg" width="18" align="absmiddle" alt=""> **对话落库与派工可见** | Chat 助手消息可一键写入知识库（新建 / 覆盖 / 追加，正文以服务端 `messageId` 为准）。中栏派工条展示进行中 / 待消费 / 同步子任务，可跳转子会话与取消。 |
-| <img src="docs/assets/icons/hourglass.svg" width="18" align="absmiddle" alt=""> **可选鉴权与部署** | `AUTH_MODE=none/password` 本地或远程部署。Docker + CI + `db:backup` 一键备份。 |
+
+| 能力                    | 说明                                                                                                                                                                                                                                                                                                                                                                                      |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+|  **Markdown 原生**      | 文章以`.md` 文件为单一事实来源，Git 可跟踪。支持 GFM、代码高亮、数学公式、HTML 嵌入、脚注。Milkdown 所见即所得编辑；图片按文章稳定 id 分目录（`content/uploads/{garden}/{postId}/`，草稿走 `_draft/{draftKey}`），改 slug 不断链；上传先占位再替换。                                                                                                                                      |
+|  **AI 核心**            | Agent、Skill、MCP Server、Memory、Prompt 全部内置。ReAct + SSE 流式`/chat`，思考时间线、工具同步/异步标识；三段式 auto-compact（micro → memory flush → macro），`/compact` 与侧栏按钮经 Agent `session_compact` 统一执行。编辑器选区可一键润色 / 精简 / 扩写（Canvas 式改写）。支持本地推理：Ollama / llama.cpp / LM Studio / vLLM（OpenAI 兼容，会话模型 id 形如 `ollama/llama3.2`）。 |
+|  **Swarm 三层 Agent**   | 超级 / 管理 / 子 Agent 三层层级，权限硬拦截、Agent 间消息总线、心跳自主运行、`spawn_subagent` 异步派生与 `report_back`。                                                                                                                                                                                                                                                                  |
+|  **莫兰迪星河设计**     | 暖灰莫兰迪色系 + 玻璃拟态 + Three.js 星空 Hero + Bento 网格。100 个几何 SVG Agent 头像按 id 稳定分配，深浅主题切换。                                                                                                                                                                                                                                                                      |
+|  **本地优先**           | 内容先落盘到本地文件，再同步到 SQLite。~22 Service CRUD + 管理页，Markdown ↔ SQLite 双向写回，`db:sync` 支持 `--watch`。                                                                                                                                                                                                                                                                 |
+|  **自动化流**           | Trigger 事件触发 + Approval 审批拦截 + Agent Loop。异步任务队列`async_task_run/status`，后台运行结果自动回流对话。                                                                                                                                                                                                                                                                        |
+|  **全局搜索与相关笔记** | FTS5 全文索引`search.global`，跨文章 / Agent / Skill / Memory / Prompt 统一检索。阅读页 `post.related` 按全文 / 标签 / 花园 / 分类综合推荐邻近笔记。                                                                                                                                                                                                                                      |
+|  **对话落库与派工可见** | Chat 助手消息可一键写入知识库（新建 / 覆盖 / 追加，正文以服务端`messageId` 为准）。中栏派工条展示进行中 / 待消费 / 同步子任务，可跳转子会话与取消。                                                                                                                                                                                                                                       |
+|  **可选鉴权与部署**     | `AUTH_MODE=none/password` 本地或远程部署。Docker + CI + `db:backup` 一键备份。                                                                                                                                                                                                                                                                                                            |
 
 ---
 
@@ -107,9 +80,9 @@ pnpm dev
 # 前端 Turbopack（可选）：pnpm --filter @knowpilot/web dev:turbo
 ```
 
-- 前端：<http://localhost:3000>
-- 后端：<http://localhost:3010>
-- tRPC 端点：<http://localhost:3010/api/trpc>
+- 前端：[http://localhost:3000](http://localhost:3000)
+- 后端：[http://localhost:3010](http://localhost:3010)
+- tRPC 端点：[http://localhost:3010/api/trpc](http://localhost:3010/api/trpc)
 
 ### 环境变量
 
@@ -166,19 +139,20 @@ pnpm validate       # lint → test → build → e2e 一键验收
 
 ## 技术栈
 
-| 层级 | 技术 |
-|---|---|
-| 语言 / 运行时 | TypeScript 5.8、Node.js（server 通过 `tsx` 运行） |
-| 包管理 | pnpm monorepo（`workspace:*`） |
-| 前端 | Next.js 16 + React 19（App Router） |
-| 样式 | Tailwind CSS 4 + shadcn/ui + `@tailwindcss/typography` + Framer Motion + Three.js |
-| 编辑器 | Milkdown 7（Markdown WYSIWYG） |
-| 通信 | tRPC 11 + `@trpc/react-query` + superjson |
-| 数据获取 | TanStack React Query 5 |
-| 后端 | Express 5 + CORS |
-| ORM / 数据库 | Prisma 6 + SQLite |
-| 校验 / 共享类型 | Zod 3，集中定义在 `packages/shared` |
-| 测试 | Vitest 3（server / shared / web）+ Playwright（web Chat E2E） |
+
+| 层级            | 技术                                                                             |
+| ----------------- | ---------------------------------------------------------------------------------- |
+| 语言 / 运行时   | TypeScript 5.8、Node.js（server 通过`tsx` 运行）                                 |
+| 包管理          | pnpm monorepo（`workspace:*`）                                                   |
+| 前端            | Next.js 16 + React 19（App Router）                                              |
+| 样式            | Tailwind CSS 4 + shadcn/ui +`@tailwindcss/typography` + Framer Motion + Three.js |
+| 编辑器          | Milkdown 7（Markdown WYSIWYG）                                                   |
+| 通信            | tRPC 11 +`@trpc/react-query` + superjson                                         |
+| 数据获取        | TanStack React Query 5                                                           |
+| 后端            | Express 5 + CORS                                                                 |
+| ORM / 数据库    | Prisma 6 + SQLite                                                                |
+| 校验 / 共享类型 | Zod 3，集中定义在`packages/shared`                                               |
+| 测试            | Vitest 3（server / shared / web）+ Playwright（web Chat E2E）                    |
 
 ---
 
@@ -224,11 +198,12 @@ OasisMind/                  # 产品名见微；本地目录或仍叫 KnowPilot
 
 ### Swarm：三层 Agent 层级 + 心跳自主运行
 
-| 层级 | tier | 权限 | 说明 |
-|---|---|---|---|
-| 超级 Agent | `super` | 全局 CRUD + 跨 Workspace | 首次启动自动创建，心跳自主运行 |
+
+| 层级       | tier      | 权限                       | 说明                                    |
+| ------------ | ----------- | ---------------------------- | ----------------------------------------- |
+| 超级 Agent | `super`   | 全局 CRUD + 跨 Workspace   | 首次启动自动创建，心跳自主运行          |
 | 管理 Agent | `manager` | Workspace 内 CRUD 子 Agent | 每个 Workspace 一个，自动创建主 session |
-| 子 Agent | `sub` | 执行任务 + report_back | 由管理 Agent 或用户创建 |
+| 子 Agent   | `sub`     | 执行任务 + report_back     | 由管理 Agent 或用户创建                 |
 
 权限硬拦截（`swarmPermissionGuard`）、Agent 间消息总线（`swarmBus`）、node-cron 心跳引擎、向上发消息时机与 depth 防循环都在 `infra/` 内闭环。
 
@@ -246,13 +221,14 @@ OasisMind/                  # 产品名见微；本地目录或仍叫 KnowPilot
 
 对标 Claude Code 的 `compact_boundary` + `getMessagesAfterCompactBoundary` 实践，压缩后摘要**只经一条路径**进入 LLM：
 
-| 存储 / 通道 | 作用 |
-|---|---|
-| `ChatSession.contextSummary` | 摘要唯一权威源 |
-| `maybeCompactMessages` | 每轮最多注入一份摘要 + 最近消息 |
-| 边界消息 `__context_compact__` | UI 时间线与元数据，**不含**完整摘要正文 |
-| `session_compact` 工具返回值 | 仅 `success` / 条数，**无** `summaryPreview` |
-| Agent 确认回复 | 代码层强制「压缩已完成」，禁止复述摘要 |
+
+| 存储 / 通道                   | 作用                                        |
+| ------------------------------- | --------------------------------------------- |
+| `ChatSession.contextSummary`  | 摘要唯一权威源                              |
+| `maybeCompactMessages`        | 每轮最多注入一份摘要 + 最近消息             |
+| 边界消息`__context_compact__` | UI 时间线与元数据，**不含**完整摘要正文     |
+| `session_compact` 工具返回值  | 仅`success` / 条数，**无** `summaryPreview` |
+| Agent 确认回复                | 代码层强制「压缩已完成」，禁止复述摘要      |
 
 手动压缩：`/compact`、侧栏「立即压缩」→ 普通用户消息 → Agent → `session_compact`。程序化调用可走 tRPC `session.compact`（`aiReadable`，不经 Agent 回合）。详见 [`docs/development/开发心路历程.md`](docs/development/开发心路历程.md) 与 [`docs/surveys-2026/对比分析-记忆-Harness-Agent.md`](docs/surveys-2026/对比分析-记忆-Harness-Agent.md)。
 
@@ -283,13 +259,14 @@ L1 ~ L5 已全部落地，项目处于**功能完备、持续打磨**阶段。�
 
 项目已完成 L1 ~ L5 全部阶段：
 
-| 阶段 | 主题 | 状态 |
-|---|---|---|
+
+| 阶段   | 主题                                                  | 状态   |
+| -------- | ------------------------------------------------------- | -------- |
 | **L1** | 博客基建：首页、文章、编辑器、Markdown ↔ SQLite 同步 | 已封板 |
-| **L2** | AI 核心：Agent / Skill / MCP / Memory / Chat | 已完成 |
-| **L3** | 内容运维：File / Git / Task / Log / Workspace | 已完成 |
-| **L4** | 自动化流：Trigger / Approval / Agent Loop | 已完成 |
-| **L5** | 打磨与规模化：搜索、鉴权、统计、部署 | 已完成 |
+| **L2** | AI 核心：Agent / Skill / MCP / Memory / Chat          | 已完成 |
+| **L3** | 内容运维：File / Git / Task / Log / Workspace         | 已完成 |
+| **L4** | 自动化流：Trigger / Approval / Agent Loop             | 已完成 |
+| **L5** | 打磨与规模化：搜索、鉴权、统计、部署                  | 已完成 |
 
 后续规划见 [`docs/development/future-features.md`](docs/development/future-features.md)。
 
@@ -343,6 +320,7 @@ pnpm dev:ngrok:quick    # 跳过 db:sync
 ```
 
 启动后日志会打印：
+
 ```
 📧 [AgentMail] inbox ready: yourname@agentmail.to
 [AgentMail] webhook 已注册: https://xxx.ngrok-free.dev/api/webhooks/agentmail
@@ -385,15 +363,16 @@ ask_user：resolveAskUserFromMail → 注入答复给 Agent 续轮
 
 ### 必需的环境变量
 
-| 变量 | 必需 | 说明 |
-|---|---|---|
-| `AGENTMAIL_API_KEY` | 是 | AgentMail 平台 API Key |
-| `AGENTMAIL_INBOX_ID` | 否 | 指定 inbox（缺省自动创建） |
-| `AGENTMAIL_ASK_TO` | 是 | ask_user 邮件发给谁（你的邮箱） |
-| `NGROK_DOMAIN` | 方案 A | ngrok 固定域名（如 `xxx.ngrok-free.dev`） |
-| `PUBLIC_URL` | 是 | 公网完整 URL（`https://xxx.ngrok-free.dev`），server 据此注册 webhook |
-| `AGENTMAIL_WEBHOOK_SECRET` | 推荐 | webhook 验签密钥（未配时开发期放行并 warn） |
-| `AGENTMAIL_WEBHOOK_URL` | 否 | 直接指定完整 webhook URL（优先级高于 PUBLIC_URL 派生） |
+
+| 变量                       | 必需   | 说明                                                                  |
+| ---------------------------- | -------- | ----------------------------------------------------------------------- |
+| `AGENTMAIL_API_KEY`        | 是     | AgentMail 平台 API Key                                                |
+| `AGENTMAIL_INBOX_ID`       | 否     | 指定 inbox（缺省自动创建）                                            |
+| `AGENTMAIL_ASK_TO`         | 是     | ask_user 邮件发给谁（你的邮箱）                                       |
+| `NGROK_DOMAIN`             | 方案 A | ngrok 固定域名（如`xxx.ngrok-free.dev`）                              |
+| `PUBLIC_URL`               | 是     | 公网完整 URL（`https://xxx.ngrok-free.dev`），server 据此注册 webhook |
+| `AGENTMAIL_WEBHOOK_SECRET` | 推荐   | webhook 验签密钥（未配时开发期放行并 warn）                           |
+| `AGENTMAIL_WEBHOOK_URL`    | 否     | 直接指定完整 webhook URL（优先级高于 PUBLIC_URL 派生）                |
 
 ---
 
