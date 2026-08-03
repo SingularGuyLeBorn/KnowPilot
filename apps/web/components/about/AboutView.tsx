@@ -253,28 +253,30 @@ export function AboutView({ profile }: { profile: AboutProfile }) {
             <StaggerItem className="lg:col-span-1">
               <div className="kp-card-dense h-full p-3">
                 <SectionHeader icon={<Cpu className="h-4 w-4" />} title="技术栈" className="mb-1.5" />
-                <div className="flex flex-col gap-1">
-                  {profile.stack.map((g) => (
-                    <div key={g.category} className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-                      <span className="text-[11px] font-semibold text-[var(--kp-text-1)]">{g.category}</span>
-                      <span className="text-[10px] leading-snug text-[var(--kp-text-3)]">{g.items.slice(0, 5).join(" · ")}</span>
-                    </div>
+                <p className="text-[11px] leading-snug text-[var(--kp-text-3)]">
+                  {profile.stack.map((g, i) => (
+                    <span key={g.category}>
+                      <span className="font-semibold text-[var(--kp-text-1)]">{g.category}</span>
+                      <span>: {g.items.slice(0, 6).join(" · ")}</span>
+                      {i < profile.stack.length - 1 && <span className="mx-1.5 text-[var(--kp-text-3)]/60">·</span>}
+                    </span>
                   ))}
-                </div>
+                </p>
               </div>
             </StaggerItem>
 
             <StaggerItem className="lg:col-span-1">
               <div className="kp-card-dense h-full p-3">
                 <SectionHeader icon={<Wand2 className="h-4 w-4" />} title="现在用的工具" className="mb-1.5" />
-                <div className="flex flex-col gap-1">
-                  {profile.toolbox.map((g) => (
-                    <div key={g.category} className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-                      <span className="text-[11px] font-semibold text-[var(--kp-text-1)]">{g.category}</span>
-                      <span className="text-[10px] leading-snug text-[var(--kp-text-3)]">{g.items.slice(0, 6).join(" · ")}</span>
-                    </div>
+                <p className="text-[11px] leading-snug text-[var(--kp-text-3)]">
+                  {profile.toolbox.map((g, i) => (
+                    <span key={g.category}>
+                      <span className="font-semibold text-[var(--kp-text-1)]">{g.category}</span>
+                      <span>: {g.items.slice(0, 7).join(" · ")}</span>
+                      {i < profile.toolbox.length - 1 && <span className="mx-1.5 text-[var(--kp-text-3)]/60">·</span>}
+                    </span>
                   ))}
-                </div>
+                </p>
               </div>
             </StaggerItem>
           </StaggerContainer>
