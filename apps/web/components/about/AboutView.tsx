@@ -39,6 +39,8 @@ import {
 import type { AboutProfile } from "@knowpilot/shared";
 import { ScrollReveal, StaggerContainer, StaggerItem } from "@/components/magicui/scroll-reveal";
 import { HeroSection } from "@/components/about/HeroSection";
+import { SolarSystemScene } from "@/components/about/SolarSystemScene";
+import { BlackHoleScene } from "@/components/about/BlackHoleScene";
 import { OasisMindLogo } from "@/lib/icons";
 import { cn } from "@/lib/utils";
 
@@ -273,6 +275,17 @@ export function AboutView({ profile }: { profile: AboutProfile }) {
               );
             })}
           </StaggerContainer>
+        </section>
+
+        {/* Cosmos */}
+        <section className="mb-6">
+          <ScrollReveal>
+            <SectionLabel icon={Rocket}>Cosmos</SectionLabel>
+          </ScrollReveal>
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+            <SolarSystemScene />
+            <BlackHoleScene />
+          </div>
         </section>
 
         {/* Focus + Stack + Toolbox */}
