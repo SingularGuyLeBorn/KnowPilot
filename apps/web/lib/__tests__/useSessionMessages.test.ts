@@ -81,7 +81,7 @@ describe("useSessionMessages / messageFieldsEqual", () => {
 
   it("attachments 不同判定为不等", () => {
     const a = baseMessage();
-    const b = baseMessage({ attachments: [{ type: "image", url: "a.png" }] });
+    const b = baseMessage({ attachments: [{ type: "image", name: "a.png", mimeType: "image/png", previewUrl: "a.png" }] });
     expect(__messageFieldsEqualForTests(a, b)).toBe(false);
   });
 
@@ -104,8 +104,8 @@ describe("useSessionMessages / messageFieldsEqual", () => {
   });
 
   it("内容相同但对象引用不同的 attachments 判定为相等", () => {
-    const a = baseMessage({ attachments: [{ type: "image", url: "a.png" }] });
-    const b = baseMessage({ attachments: [{ type: "image", url: "a.png" }] });
+    const a = baseMessage({ attachments: [{ type: "image", name: "a.png", mimeType: "image/png", previewUrl: "a.png" }] });
+    const b = baseMessage({ attachments: [{ type: "image", name: "a.png", mimeType: "image/png", previewUrl: "a.png" }] });
     expect(a.attachments).not.toBe(b.attachments);
     expect(__messageFieldsEqualForTests(a, b)).toBe(true);
   });

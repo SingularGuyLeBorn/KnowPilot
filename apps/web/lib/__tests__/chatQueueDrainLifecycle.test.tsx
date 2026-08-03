@@ -170,7 +170,7 @@ describe("Chat queue drain 生命周期", () => {
     expect(sessionComposeStore.get(SID).userQueue).toHaveLength(1);
 
     // 步骤 4：释放 M1 promise（finally 执行 queueDraining=false）
-    resolveM1?.();
+    (resolveM1 as (() => void) | null)?.();
     await act(async () => {});
     await act(async () => {});
 
