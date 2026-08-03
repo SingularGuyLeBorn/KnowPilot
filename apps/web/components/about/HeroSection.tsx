@@ -41,6 +41,22 @@ function SocialIcon({ platform }: { platform: string }) {
   return <ArrowUpRight className="h-3.5 w-3.5" />;
 }
 
+function OmniLogo({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 64 64" fill="none" className={className} aria-label="OasisMind OM">
+      <rect width="64" height="64" rx="14" className="fill-[var(--kp-brand-soft)]" />
+      <circle cx="22" cy="32" r="10" className="stroke-[var(--kp-brand-deep)]" strokeWidth="3.5" />
+      <path
+        d="M36 22 V42 M36 22 L46 36 M46 22 V42"
+        className="stroke-[var(--kp-brand-deep)]"
+        strokeWidth="3.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 export function HeroSection({ profile }: { profile: AboutProfile }) {
   return (
     <section className="kp-hero-mesh relative overflow-hidden px-6 py-12 lg:px-12 lg:py-16">
@@ -56,15 +72,16 @@ export function HeroSection({ profile }: { profile: AboutProfile }) {
           </div>
 
           <div className="flex items-center gap-4">
-            <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl border border-[var(--kp-divider)] bg-gradient-to-br from-[var(--kp-accent-soft)] to-[var(--kp-brand-soft)] text-2xl font-bold text-[var(--kp-accent-deep)] shadow-sm">
-              {profile.name.slice(0, 1)}
-            </div>
+            <OmniLogo className="h-16 w-16 shrink-0 rounded-2xl border border-[var(--kp-divider)] shadow-sm" />
             <div>
               <h1 className="text-[clamp(3rem,9vw,5.5rem)] font-black leading-[0.9] tracking-[-0.04em] text-[var(--kp-text-1)]">
                 {profile.name}
               </h1>
               <p className="mt-1 text-lg font-medium text-[var(--kp-brand-dark)] md:text-xl">
                 {profile.title}
+              </p>
+              <p className="mt-2 text-xs font-medium tracking-wide text-[var(--kp-text-3)] md:text-sm">
+                见微 · 取「见微知著」之意；OM · 取 Omni 之形，望尽可能周全
               </p>
             </div>
           </div>

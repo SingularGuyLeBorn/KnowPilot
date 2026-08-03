@@ -30,6 +30,7 @@ import {
   Quote,
   Rocket,
   Sparkles,
+  Sprout,
   Target,
   Terminal,
   User,
@@ -93,6 +94,13 @@ function philosophyIcon(title: string) {
   if (title.includes("多收")) return Archive;
   if (title.includes("梦想")) return Sparkles;
   return Compass;
+}
+
+function focusIcon(title: string) {
+  if (title.includes("AI")) return Brain;
+  if (title.includes("见微") || title.includes("OasisMind")) return Sprout;
+  if (title.includes("Agent")) return Eye;
+  return Target;
 }
 
 function gradientFromTitle(title: string) {
@@ -312,21 +320,23 @@ export function AboutView({ profile }: { profile: AboutProfile }) {
           <ScrollReveal>
             <SectionLabel icon={User}>Profile</SectionLabel>
           </ScrollReveal>
-          <StaggerContainer className="grid grid-cols-1 gap-3 md:grid-cols-2">
-            <StaggerItem className="md:col-span-2">
-              <div className="kp-card-dense h-full p-3">
-                <SectionHeader icon={<Target className="h-4 w-4" />} title="关注方向" className="mb-1.5" />
-                <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-                  {profile.focus.map((f) => (
-                    <div key={f.title}>
-                      <div className="text-xs font-semibold text-[var(--kp-text-1)]">{f.title.replace(/^\*\*([^*]+)\*\*/, "$1")}</div>
-                      <div className="text-[11px] leading-snug text-[var(--kp-text-2)]">{f.description}</div>
+          <StaggerContainer className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {profile.focus.map((f) => {
+              const Icon = focusIcon(f.title);
+              const title = f.title.replace(/^\*\*([^*]+)\*\*/, "$1").replace(/：$/, "").trim();
+              return (
+                <StaggerItem key={f.title}>
+                  <div className="kp-card-dense flex h-full flex-col p-4">
+                    <SectionHeader icon={<Icon className="h-4 w-4" />} title={title} className="mb-2" />
+                    <div className="text-xs leading-relaxed text-[var(--kp-text-2)]">
+                      <StoryMarkdown>{f.description}</StoryMarkdown>
                     </div>
-                  ))}
-                </div>
-              </div>
-            </StaggerItem>
-
+                  </div>
+                </StaggerItem>
+              );
+            })}
+          </StaggerContainer>
+          <StaggerContainer className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
             <StaggerItem>
               <div className="kp-card-dense h-full p-3">
                 <SectionHeader icon={<Cpu className="h-4 w-4" />} title="技术栈" className="mb-1.5" />
