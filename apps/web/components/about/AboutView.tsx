@@ -312,11 +312,11 @@ export function AboutView({ profile }: { profile: AboutProfile }) {
           <ScrollReveal>
             <SectionLabel icon={User}>Profile</SectionLabel>
           </ScrollReveal>
-          <StaggerContainer className="grid grid-cols-1 gap-3 lg:grid-cols-3">
-            <StaggerItem className="lg:col-span-1">
+          <StaggerContainer className="grid grid-cols-1 gap-3 md:grid-cols-2">
+            <StaggerItem className="md:col-span-2">
               <div className="kp-card-dense h-full p-3">
                 <SectionHeader icon={<Target className="h-4 w-4" />} title="关注方向" className="mb-1.5" />
-                <div className="flex flex-col gap-1">
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
                   {profile.focus.map((f) => (
                     <div key={f.title}>
                       <div className="text-xs font-semibold text-[var(--kp-text-1)]">{f.title.replace(/^\*\*([^*]+)\*\*/, "$1")}</div>
@@ -327,7 +327,7 @@ export function AboutView({ profile }: { profile: AboutProfile }) {
               </div>
             </StaggerItem>
 
-            <StaggerItem className="lg:col-span-1">
+            <StaggerItem>
               <div className="kp-card-dense h-full p-3">
                 <SectionHeader icon={<Cpu className="h-4 w-4" />} title="技术栈" className="mb-1.5" />
                 <p className="text-[11px] leading-snug text-[var(--kp-text-3)]">
@@ -342,7 +342,7 @@ export function AboutView({ profile }: { profile: AboutProfile }) {
               </div>
             </StaggerItem>
 
-            <StaggerItem className="lg:col-span-1">
+            <StaggerItem>
               <div className="kp-card-dense h-full p-3">
                 <SectionHeader icon={<Wand2 className="h-4 w-4" />} title="现在用的工具" className="mb-1.5" />
                 <p className="text-[11px] leading-snug text-[var(--kp-text-3)]">
