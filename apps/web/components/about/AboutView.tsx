@@ -10,9 +10,11 @@ import {
   ArrowUpRight,
   BarChart3,
   Blocks,
+  BookOpen,
   Brain,
   Briefcase,
   Bug,
+  CalendarClock,
   Compass,
   Cpu,
   Eye,
@@ -135,7 +137,22 @@ function SectionHeader({
       >
         {icon}
       </div>
-      <h3 className="mt-0.5 text-sm font-bold text-[var(--kp-text-1)]">{title}</h3>
+      <h3 className="mt-0.5 text-base font-bold text-[var(--kp-text-1)]">{title}</h3>
+    </div>
+  );
+}
+
+function SectionLabel({
+  icon: Icon,
+  children,
+}: {
+  icon: React.ComponentType<{ className?: string }>;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="mb-3 flex items-center gap-2">
+      <Icon className="h-4 w-4 text-[var(--kp-accent)]" />
+      <p className="text-sm font-bold uppercase tracking-[0.12em] text-[var(--kp-accent)]">{children}</p>
     </div>
   );
 }
@@ -189,8 +206,8 @@ export function AboutView({ profile }: { profile: AboutProfile }) {
         {/* Story cards */}
         {storyCards.length > 0 && (
           <section className="mb-6">
-            <ScrollReveal className="mb-3">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--kp-accent)]">Story</p>
+            <ScrollReveal>
+              <SectionLabel icon={BookOpen}>Story</SectionLabel>
             </ScrollReveal>
             <StaggerContainer className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
               {storyCards.map((card) => {
@@ -212,8 +229,8 @@ export function AboutView({ profile }: { profile: AboutProfile }) {
 
         {/* Philosophy */}
         <section className="mb-6">
-          <ScrollReveal className="mb-3">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--kp-accent)]">Philosophy</p>
+          <ScrollReveal>
+            <SectionLabel icon={Sparkles}>Philosophy</SectionLabel>
           </ScrollReveal>
           <StaggerContainer className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
             {profile.philosophy.map((item) => {
@@ -232,8 +249,8 @@ export function AboutView({ profile }: { profile: AboutProfile }) {
 
         {/* Focus + Stack + Toolbox */}
         <section className="mb-6">
-          <ScrollReveal className="mb-3">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--kp-accent)]">Profile</p>
+          <ScrollReveal>
+            <SectionLabel icon={User}>Profile</SectionLabel>
           </ScrollReveal>
           <StaggerContainer className="grid grid-cols-1 gap-3 lg:grid-cols-3">
             <StaggerItem className="lg:col-span-1">
@@ -286,8 +303,8 @@ export function AboutView({ profile }: { profile: AboutProfile }) {
         <section className="mb-6">
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-[0.9fr_1.1fr]">
             <div>
-              <ScrollReveal className="mb-3">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--kp-accent)]">Timeline</p>
+              <ScrollReveal>
+                <SectionLabel icon={CalendarClock}>Timeline</SectionLabel>
               </ScrollReveal>
               <div className="relative pl-4">
                 <div className="absolute left-0 top-1 bottom-1 w-px bg-[var(--kp-divider)]" />
@@ -309,8 +326,8 @@ export function AboutView({ profile }: { profile: AboutProfile }) {
             </div>
 
             <div>
-              <ScrollReveal className="mb-3">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--kp-accent)]">Projects</p>
+              <ScrollReveal>
+                <SectionLabel icon={Layers}>Projects</SectionLabel>
               </ScrollReveal>
               <StaggerContainer className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 {profile.projects.slice(0, 4).map((p) => (
