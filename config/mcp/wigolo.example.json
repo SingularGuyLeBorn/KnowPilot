@@ -1,0 +1,10 @@
+{
+  "name": "wigolo",
+  "transport": "stdio",
+  "enabled": false,
+  "command": "npx",
+  "args": ["wigolo", "mcp"],
+  "env": {
+    "WIGOLO_LLM_PROVIDER": "gemini"
+  }
+}
