@@ -237,13 +237,13 @@ export function AboutView({ profile }: { profile: AboutProfile }) {
           </ScrollReveal>
           <StaggerContainer className="grid grid-cols-1 gap-3 lg:grid-cols-3">
             <StaggerItem className="lg:col-span-1">
-              <div className="kp-card-dense h-full p-4">
-                <SectionHeader icon={<Target className="h-4 w-4" />} title="关注方向" className="mb-2" />
-                <div className="flex flex-col gap-1.5">
+              <div className="kp-card-dense h-full p-3">
+                <SectionHeader icon={<Target className="h-4 w-4" />} title="关注方向" className="mb-1.5" />
+                <div className="flex flex-col gap-1">
                   {profile.focus.map((f) => (
-                    <div key={f.title} className="rounded-md border border-[var(--kp-divider)] bg-[var(--kp-bg)]/60 px-2 py-1.5">
-                      <div className="text-xs font-bold text-[var(--kp-text-1)]">{f.title.replace(/^\*\*([^*]+)\*\*/, "$1")}</div>
-                      <div className="mt-0.5 text-[11px] leading-relaxed text-[var(--kp-text-2)]">{f.description}</div>
+                    <div key={f.title}>
+                      <div className="text-xs font-semibold text-[var(--kp-text-1)]">{f.title.replace(/^\*\*([^*]+)\*\*/, "$1")}</div>
+                      <div className="text-[11px] leading-snug text-[var(--kp-text-2)]">{f.description}</div>
                     </div>
                   ))}
                 </div>
@@ -251,13 +251,13 @@ export function AboutView({ profile }: { profile: AboutProfile }) {
             </StaggerItem>
 
             <StaggerItem className="lg:col-span-1">
-              <div className="kp-card-dense h-full p-4">
-                <SectionHeader icon={<Cpu className="h-4 w-4" />} title="技术栈" className="mb-2" />
-                <div className="flex flex-col gap-1.5">
+              <div className="kp-card-dense h-full p-3">
+                <SectionHeader icon={<Cpu className="h-4 w-4" />} title="技术栈" className="mb-1.5" />
+                <div className="flex flex-col gap-1">
                   {profile.stack.map((g) => (
-                    <div key={g.category} className="rounded-md border border-[var(--kp-divider)] bg-[var(--kp-bg)]/60 px-2 py-1.5">
-                      <div className="text-[11px] font-bold text-[var(--kp-text-1)]">{g.category}</div>
-                      <div className="mt-0.5 text-[10px] leading-relaxed text-[var(--kp-text-3)]">{g.items.slice(0, 5).join(" · ")}</div>
+                    <div key={g.category} className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                      <span className="text-[11px] font-semibold text-[var(--kp-text-1)]">{g.category}</span>
+                      <span className="text-[10px] leading-snug text-[var(--kp-text-3)]">{g.items.slice(0, 5).join(" · ")}</span>
                     </div>
                   ))}
                 </div>
@@ -265,13 +265,13 @@ export function AboutView({ profile }: { profile: AboutProfile }) {
             </StaggerItem>
 
             <StaggerItem className="lg:col-span-1">
-              <div className="kp-card-dense h-full p-4">
-                <SectionHeader icon={<Wand2 className="h-4 w-4" />} title="现在用的工具" className="mb-2" />
-                <div className="flex flex-col gap-1.5">
+              <div className="kp-card-dense h-full p-3">
+                <SectionHeader icon={<Wand2 className="h-4 w-4" />} title="现在用的工具" className="mb-1.5" />
+                <div className="flex flex-col gap-1">
                   {profile.toolbox.map((g) => (
-                    <div key={g.category} className="rounded-md border border-[var(--kp-divider)] bg-[var(--kp-bg)]/60 px-2 py-1.5">
-                      <div className="text-[11px] font-bold text-[var(--kp-text-1)]">{g.category}</div>
-                      <div className="mt-0.5 text-[10px] leading-relaxed text-[var(--kp-text-3)]">{g.items.slice(0, 6).join(" · ")}</div>
+                    <div key={g.category} className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                      <span className="text-[11px] font-semibold text-[var(--kp-text-1)]">{g.category}</span>
+                      <span className="text-[10px] leading-snug text-[var(--kp-text-3)]">{g.items.slice(0, 6).join(" · ")}</span>
                     </div>
                   ))}
                 </div>
@@ -388,11 +388,19 @@ function ProjectCard({ project }: { project: AboutProfile["projects"][number] })
             title={project.name}
             className="min-w-0"
           />
-          {project.highlight && (
-            <span className="shrink-0 rounded-full bg-[var(--kp-accent-soft)] px-2 py-0.5 text-[10px] font-bold text-[var(--kp-accent-deep)]">
-              {project.highlight}
-            </span>
-          )}
+          <div className="flex shrink-0 items-center gap-1.5">
+            {project.highlight && (
+              <span className="rounded-full bg-[var(--kp-accent-soft)] px-2 py-0.5 text-[10px] font-bold text-[var(--kp-accent-deep)]">
+                {project.highlight}
+              </span>
+            )}
+            {project.href && (
+              <span className="inline-flex items-center gap-0.5 text-[10px] font-medium text-[var(--kp-text-3)] transition-colors group-hover:text-[var(--kp-accent-deep)]">
+                访问
+                <ArrowUpRight className="h-3 w-3 transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5" />
+              </span>
+            )}
+          </div>
         </div>
         {project.tagline && <p className="mb-1 text-[10px] font-bold text-[var(--kp-brand-deep)]">{project.tagline}</p>}
         <p className="mb-2 line-clamp-2 text-xs leading-relaxed text-[var(--kp-text-2)]">{project.description}</p>
