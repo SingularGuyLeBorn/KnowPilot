@@ -23,10 +23,12 @@ function NewPostPageContent() {
   const { data: gardens } = trpc.garden.list.useQuery({ page: 1, pageSize: 100 });
 
   const [title, setTitle] = useState("");
+  const [slugInput, setSlugInput] = useState("");
   const [content, setContent] = useState("");
   const [category, setCategory] = useState("");
   const [tags, setTags] = useState("");
   const [garden, setGarden] = useState(gardenFromUrl);
+  const [createFolderIndex, setCreateFolderIndex] = useState(false);
   /** 新建页稳定草稿键：附件落 uploads/{garden}/_draft/{draftKey}/，与 slug 解耦 */
   const [draftKey] = useState(() =>
     typeof crypto !== "undefined" && "randomUUID" in crypto
@@ -57,11 +59,14 @@ function NewPostPageContent() {
     },
   });
 
+  const [createFolderIndex, setCreateFolderIndex] = useState(false);
+
   const handleCreate = () => {
     if (!title.trim()) return;
     create.mutate(
       {
         title: title.trim(),
+        slug: slugInput.trim() || undefined,
         content,
         garden,
         category: category || null,
@@ -70,6 +75,7 @@ function NewPostPageContent() {
           .map((t) => t.trim())
           .filter(Boolean),
         published: true,
+        createFolderIndex,
       },
       {
         onError: (error) => {
@@ -158,6 +164,23 @@ function NewPostPageContent() {
             placeholder="标签，用逗号分隔"
             className="rounded-lg border border-[var(--kp-divider)] bg-[var(--kp-bg)] px-3 py-1.5 text-sm text-[var(--kp-text-1)] outline-none placeholder:text-[var(--kp-text-3)]"
           />
+          <div className="flex flex-col gap-1">
+            <input
+              value={slugInput}
+              onChange={(e) => setSlugInput(e.target.value)}
+              placeholder="路径（留空由标题生成；如 tutorials/react）"
+              className="rounded-lg border border-[var(--kp-divider)] bg-[var(--kp-bg)] px-3 py-1.5 text-sm text-[var(--kp-text-1)] outline-none placeholder:text-[var(--kp-text-3)]"
+            />
+            <label className="flex cursor-pointer items-center gap-2 text-xs text-[var(--kp-text-2)]">
+              <input
+                type="checkbox"
+                checked={createFolderIndex}
+                onChange={(e) => setCreateFolderIndex(e.target.checked)}
+                className="h-4 w-4 rounded border-[var(--kp-divider)] bg-[var(--kp-bg)] text-[var(--kp-brand-deep)]"
+              />
+              文件夹本身也是文档（生成 a/b/index.md）
+            </label>
+          </div>
         </div>
 
         <div className="flex-1 overflow-y-auto p-4 sm:p-6">

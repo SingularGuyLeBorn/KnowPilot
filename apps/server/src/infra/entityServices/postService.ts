@@ -146,10 +146,12 @@ export class PostService extends FileSyncService<CreatePostInput, UpdatePostInpu
   protected buildCreateData(input: CreatePostInput): any {
     const slug = input.slug || this.generateSlug(input.title);
     const garden = input.garden ?? DEFAULT_POST_GARDEN;
+    const finalSlug =
+      input.createFolderIndex && !slug.endsWith("/index") ? `${slug}/index` : slug;
     return {
       title: input.title,
       garden,
-      slug,
+      slug: finalSlug,
       content: stripLeadingMarkdownFrontmatter(input.content ?? ""),
       published: input.published ?? false,
       excerpt: input.excerpt,
@@ -409,10 +411,10 @@ export class PostService extends FileSyncService<CreatePostInput, UpdatePostInpu
     return rawItems.map((item: any) => this.formatEntity(item));
   }
 
-  async tree(garden?: string): Promise<{ id: string; garden: string; slug: string; title: string }[]> {
+  async tree(garden?: string): Promise<{ id: string; garden: string; slug: string; title: string; published: boolean }[]> {
     return this.prisma.post.findMany({
-      where: { published: true, deletedAt: null, ...(garden ? { garden } : {}) },
-      select: { id: true, garden: true, slug: true, title: true },
+      where: { deletedAt: null, ...(garden ? { garden } : {}) },
+      select: { id: true, garden: true, slug: true, title: true, published: true },
       orderBy: [{ garden: "asc" }, { slug: "asc" }],
     });
   }

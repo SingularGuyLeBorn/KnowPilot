@@ -31,12 +31,15 @@ import {
 import { YouTubeTranscriptApi } from "youtube-transcript-api-js";
 import {
   AGENT_TOOL_RESULT_MAX_CHARS,
+  DEFAULT_POST_GARDEN,
   LLM_MODEL_IDS,
+  isValidGardenIdFormat,
   resolveModelSupportsVision,
 } from "@knowpilot/shared";
 import type { NativeToolContext, NativeToolDefinition } from "./types.js";
 import { registerNativeDomain } from "./registerDomain.js";
 import { academicDefs, academicHandlers } from "./web/academic.js";
+import type { PostEntity } from "../../entityServices/postService.js";
 
 interface InfoSourceSnapshot {
   name: string;
@@ -865,6 +868,191 @@ async function saveWebpageTool(args: Record<string, unknown>, ctx: NativeToolCon
   };
 }
 
+/**
+ * 文章素材包：给定 URL，抓取正文 + 下载所有图片到 content/uploads/imports/，
+ * 把 Markdown 里的图片 URL 改写成本地 /uploads/... 路径，最后创建一篇本地 Post。
+ * 解决「翻译/整理文章后图片变成占位符」的问题：图片存在本地，不受原站防盗链/过期影响。
+ */
+function isNoiseImageUrl(src: string): boolean {
+  return (
+    !src.startsWith("http") ||
+    src.includes("avatar") ||
+    src.includes("favicon") ||
+    src.includes("prodtouch") ||
+    src.includes("touch-icon") ||
+    /\/icon[^/]*\.(png|jpe?g|gif|webp)/i.test(src)
+  );
+}
+
+async function articleImportTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  const url = String(args.url || "").trim();
+  if (!url) throw new Error("url 不能为空");
+
+  const started = Date.now();
+  const method = args.method === "direct" ? undefined : "playwright";
+  const result = await parsePlatformUrl({
+    url,
+    timeout: args.timeout !== undefined ? Number(args.timeout) : 30000,
+    method,
+    embedOcr: false,
+    fetchImageFiles: false,
+  }).catch((err: unknown) => {
+    if (isArticleFetchFatalError(err)) throw formatReadArticleFatalError(url, err);
+    throw err;
+  });
+
+  const title = String(args.title || result.title || "untitled").trim();
+  let content = (result.content ?? "").replace(/^\d+ \| /gm, "").trim();
+  const images = (result.images || []).filter((src) => !isNoiseImageUrl(src));
+
+  const urlHash = crypto.createHash("sha1").update(url).digest("hex").slice(0, 8);
+  const importsDir = resolveSafePath(ctx.config, `content/uploads/imports/${urlHash}`);
+  fs.mkdirSync(importsDir, { recursive: true });
+
+  const replacements: Array<{ original: string; local: string }> = [];
+  const failed: string[] = [];
+
+  for (let i = 0; i < images.length; i++) {
+    const src = images[i];
+    if (!src) continue;
+    const absoluteSrc = resolveUrl(url, src);
+    try {
+      const localPath = await downloadImageToDir(absoluteSrc, importsDir, i + 1);
+      const publicPath = `/uploads/imports/${urlHash}/${path.basename(localPath)}`;
+      replacements.push({ original: src, local: publicPath });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      failed.push(`${src}: ${msg}`);
+    }
+  }
+
+  for (const { original, local } of replacements) {
+    content = rewriteImageUrl(content, original, local);
+  }
+
+  // 给本地图片写相对路径，方便本地 Markdown 预览也兼容
+  const localRelPrefix = `content/uploads/imports/${urlHash}/`;
+  const previewContent = replacements.reduce(
+    (acc, { original, local }) => rewriteImageUrl(acc, original, `${localRelPrefix}${path.basename(local)}`),
+    content,
+  );
+
+  const garden = parseGardenForImport(args.garden);
+  const slug = args.slug ? String(args.slug) : slugify(title);
+  const excerpt = String(args.excerpt || previewContent.slice(0, 200).replace(/\s+/g, " ").trim());
+  const tags = Array.isArray(args.tags) ? args.tags.map(String) : ["转载"];
+  const published = args.published === true;
+
+  const createResult = await ctx.services.post.create({
+    title,
+    garden,
+    content: previewContent,
+    slug,
+    excerpt,
+    coverImage: null,
+    category: args.category ? String(args.category) : "转载",
+    tags,
+    published,
+  });
+
+  if (!createResult.success) {
+    throw new Error(createResult.error?.message || "创建导入文章失败");
+  }
+  const post = createResult.data as PostEntity;
+
+  return {
+    url,
+    title,
+    postId: post.id,
+    garden: post.garden,
+    slug: post.slug,
+    path: `content/${post.garden}/${post.slug}.md`,
+    imageCount: replacements.length,
+    failedDownloads: failed,
+    contentChars: previewContent.length,
+    elapsedMs: Date.now() - started,
+    suggestedTool: "post_list",
+    note: `已导入 ${replacements.length} 张图片到 content/uploads/imports/${urlHash}/。失败 ${failed.length} 张。`,
+  };
+}
+
+function parseGardenForImport(raw: unknown): string {
+  if (raw === undefined || raw === null || raw === "") return DEFAULT_POST_GARDEN;
+  const g = String(raw).trim();
+  if (!isValidGardenIdFormat(g)) {
+    throw new Error(`garden 无效：${g}。须为小写字母开头的 [a-z0-9_-]，且不能是 about/uploads`);
+  }
+  return g;
+}
+
+function slugify(title: string): string {
+  return title
+    .toLowerCase()
+    .replace(/[^\w\s\u4e00-\u9fa5-]/g, "")
+    .trim()
+    .replace(/\s+/g, "-")
+    .slice(0, 80);
+}
+
+function resolveUrl(base: string, src: string): string {
+  if (src.startsWith("http://") || src.startsWith("https://")) return src;
+  if (src.startsWith("//")) return `https:${src}`;
+  try {
+    return new URL(src, base).href;
+  } catch {
+    return src;
+  }
+}
+
+function rewriteImageUrl(content: string, original: string, local: string): string {
+  const escaped = original.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  // Markdown 图片语法：![alt](url)
+  const mdRe = new RegExp(`!\\[([^\\]]*)\\]\\(${escaped}\\)`, "g");
+  let out = content.replace(mdRe, (_, alt) => `![${alt}](${local})`);
+  // HTML img src（turndown 不会生成，但做兜底）
+  const htmlRe = new RegExp(`(<img[^>]*src=["'])(${escaped})(["'])`, "g");
+  out = out.replace(htmlRe, (_, pre, _url, post) => `${pre}${local}${post}`);
+  return out;
+}
+
+async function downloadImageToDir(src: string, dir: string, index: number): Promise<string> {
+  const referer = getRefererForUrl(src);
+  const res = await fetch(src, {
+    method: "GET",
+    headers: {
+      "User-Agent":
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+      Accept: "image/webp,image/apng,image/*,*/*;q=0.8",
+      ...(referer ? { Referer: referer } : {}),
+    },
+    redirect: "follow",
+    signal: AbortSignal.timeout(20_000),
+  });
+  if (!res.ok) {
+    throw new Error(`HTTP ${res.status}`);
+  }
+  const buf = Buffer.from(await res.arrayBuffer());
+  if (buf.length === 0) throw new Error("空响应");
+
+  const ext = extensionFromResponse(res, src) || ".png";
+  const hash = crypto.createHash("sha1").update(src).digest("hex").slice(0, 6);
+  const fileName = `${index}-${hash}${ext}`;
+  const abs = path.join(dir, fileName);
+  fs.writeFileSync(abs, buf);
+  return abs;
+}
+
+function extensionFromResponse(res: Response, src: string): string | null {
+  const ct = res.headers.get("content-type")?.toLowerCase() || "";
+  if (ct.includes("png")) return ".png";
+  if (ct.includes("jpeg") || ct.includes("jpg")) return ".jpg";
+  if (ct.includes("webp")) return ".webp";
+  if (ct.includes("gif")) return ".gif";
+  const ext = path.extname(new URL(src).pathname).toLowerCase();
+  if ([".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp"].includes(ext)) return ext;
+  return null;
+}
+
 function mimeFromExt(filePath: string): string {
   const ext = path.extname(filePath).toLowerCase();
   if (ext === ".png") return "image/png";
@@ -1303,6 +1491,28 @@ const WEB_DEFS: NativeToolDefinition[] = [
     },
   },
   {
+    name: "article_import",
+    concurrencyClass: "A",
+    // 创建文章 + 下载图片：有本地写副作用，但属于可控导入
+    description:
+      "导入外部文章到本地知识库：给定 URL，抓取正文并把文章里所有图片下载到 content/uploads/imports/，Markdown 图片 URL 改写成本地 /uploads/... 路径，然后创建一篇 Post（默认未发布草稿）。解决 read_article 抓取后原图防盗链/过期变成占位符的问题。长文或图片多时可用 async_task_run 后台执行。",
+    parameters: {
+      type: "object",
+      properties: {
+        url: { type: "string", description: "文章 URL" },
+        title: { type: "string", description: "文章标题（默认抓取原标题）" },
+        garden: { type: "string", description: "目标花园 id（默认 posts）" },
+        slug: { type: "string", description: "文章路径（默认由标题生成）" },
+        category: { type: "string", description: "分类（默认 转载）" },
+        tags: { type: "array", items: { type: "string" }, description: "标签（默认 [转载]）" },
+        published: { type: "boolean", description: "是否直接发布，默认 false（草稿）" },
+        method: { type: "string", enum: ["playwright", "direct"], description: "抓取方式：playwright（默认，可渲染 JS/登录墙）或直接 HTTP" },
+        timeout: { type: "number", description: "抓取超时毫秒，默认 30000" },
+      },
+      required: ["url"],
+    },
+  },
+  {
     name: "read_article",
     concurrencyClass: "A",
     // 只读抓取网页正文，无本地写副作用
@@ -1502,6 +1712,7 @@ const WEB_HANDLERS = {
   rss_fetch: rssFetchTool,
   rss_draft_posts: rssDraftPostsTool,
   read_article: readArticleTool,
+  article_import: articleImportTool,
   scrape_web_page: scrapeWebPageTool,
   browser_screenshot: browserScreenshotTool,
   scroll_screenshot: scrollScreenshotTool,

@@ -115,6 +115,8 @@ export const createPostSchema = z.object({
   category: z.string().optional().nullable(),
   tags: z.array(z.string()).optional(),
   published: z.boolean().optional(),
+  /** 创建文件夹首页：slug 为 a/b 时生成 a/b/index.md，使该文件夹节点本身成为文档 */
+  createFolderIndex: z.boolean().optional(),
 });
 
 export const updatePostSchema = z.object({

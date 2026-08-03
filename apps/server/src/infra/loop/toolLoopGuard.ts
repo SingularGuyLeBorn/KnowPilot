@@ -79,7 +79,7 @@ const EXPLORE_READONLY_TOOLS = new Set([
   // 场景 B 资料员：连存多页 / 连截多屏是推进
   "save_webpage",
   "download_file",
-  "article_material_pack",
+  "article_import",
   "browser_screenshot",
   "scroll_screenshot",
   "read_image",

@@ -245,6 +245,7 @@ export const ALL_NATIVE_TOOL_NAMES = [
   "save_webpage",
   "download_file",
   "article_material_pack",
+  "article_import",
   "article_video_compose",
   "read_image",
   "vision_describe",

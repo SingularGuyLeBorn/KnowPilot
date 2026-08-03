@@ -4,6 +4,7 @@
 
 import fs from "fs";
 import path from "path";
+import http from "http";
 import { execFileSync } from "child_process";
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import {
@@ -1979,5 +1980,87 @@ describe("native:feishu_send_text", () => {
     );
     expect(result).toEqual(expect.objectContaining({ message_id: "m1" }));
     fs.rmSync(root, { recursive: true, force: true });
+  });
+});
+
+describe("native:article_import", () => {
+  const tinyPng = Buffer.from(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+    "base64",
+  );
+
+  function startLocalServer(): Promise<{ url: string; close: () => void }> {
+    return new Promise((resolve) => {
+      const server = http.createServer((req, res) => {
+        if (req.url === "/img.png") {
+          res.writeHead(200, { "Content-Type": "image/png" });
+          res.end(tinyPng);
+          return;
+        }
+        res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+        res.end(
+          `<html><body><article><h1>Test Import</h1><p>This is a paragraph.</p><img src="/img.png" alt="dot"></article></body></html>`,
+        );
+      });
+      server.listen(0, "127.0.0.1", () => {
+        const addr = server.address() as { port: number };
+        resolve({
+          url: `http://127.0.0.1:${addr.port}`,
+          close: () => server.close(),
+        });
+      });
+    });
+  }
+
+  it("抓取正文并下载图片到本地 uploads/imports，改写 Markdown 图片路径", async () => {
+    const root = createTempProjectDir();
+    const server = await startLocalServer();
+    let capturedContent = "";
+    let capturedGarden = "";
+    let capturedSlug = "";
+
+    const ctx = createNativeCtx(root, {
+      services: {
+        post: {
+          create: async (input: Record<string, unknown>) => {
+            capturedContent = String(input.content || "");
+            capturedGarden = String(input.garden || "");
+            capturedSlug = String(input.slug || "");
+            return {
+              success: true,
+              data: { id: "post-123", garden: capturedGarden, slug: capturedSlug },
+            };
+          },
+        },
+      } as never,
+    });
+
+    try {
+      const result = (await executeNativeTool(
+        "article_import",
+        { url: `${server.url}/article`, method: "direct", published: true },
+        ctx,
+      )) as {
+        imageCount: number;
+        failedDownloads: string[];
+        path: string;
+      };
+
+      expect(result.imageCount).toBeGreaterThanOrEqual(1);
+      expect(result.failedDownloads).toHaveLength(0);
+      expect(capturedContent).toContain("/uploads/imports/");
+      expect(capturedContent).toContain("![dot]");
+      expect(capturedContent).toContain("This is a paragraph.");
+      expect(result.path).toBe(`content/${capturedGarden}/${capturedSlug}.md`);
+      const importsDir = path.join(root, "content", "uploads", "imports");
+      const dirs = fs.readdirSync(importsDir);
+      expect(dirs.length).toBeGreaterThanOrEqual(1);
+      const imgDir = path.join(importsDir, dirs[0]!);
+      const files = fs.readdirSync(imgDir).filter((f) => f.endsWith(".png"));
+      expect(files.length).toBeGreaterThanOrEqual(1);
+    } finally {
+      server.close();
+      fs.rmSync(root, { recursive: true, force: true });
+    }
   });
 });

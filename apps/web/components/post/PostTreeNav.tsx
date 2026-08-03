@@ -6,9 +6,11 @@ import { usePathname } from "next/navigation";
 import {
   ChevronRight,
   FileText,
+  FileX2,
   FoldVertical,
   FolderClosed,
   FolderOpen,
+  Home,
   LocateFixed,
   Search,
   UnfoldVertical,
@@ -30,6 +32,7 @@ interface PostSummary {
   slug: string;
   title: string;
   garden?: string;
+  published?: boolean;
 }
 
 interface TreeNode {
@@ -39,6 +42,7 @@ interface TreeNode {
   title: string;
   key: string;
   type: "doc" | "group";
+  published?: boolean;
   children: TreeNode[];
 }
 
@@ -142,6 +146,7 @@ function buildTree(posts: PostSummary[]): TreeNode[] {
       title: post?.title || key,
       key,
       type: post ? "doc" : "group",
+      published: post?.published,
       children,
     };
   };
@@ -255,6 +260,7 @@ const TreeNodeItem = memo(function TreeNodeItem({
   const isActive = node.slug === activeSlug;
   const hasChildren = node.children.length > 0;
   const isDoc = node.type === "doc";
+  const isDraft = isDoc && node.published === false;
   const pinned = Boolean(node.slug && node.garden && isPostPinned(node.garden, node.slug));
 
   const rowClass = cn(
@@ -270,6 +276,8 @@ const TreeNodeItem = memo(function TreeNodeItem({
     ) : (
       <FolderClosed className="h-4 w-4 shrink-0 text-[var(--kp-brand-light)]" />
     )
+  ) : isDraft ? (
+    <FileX2 className="h-4 w-4 shrink-0 text-[var(--kp-text-3)]" />
   ) : (
     <FileText className="h-4 w-4 shrink-0 text-[var(--kp-text-3)]" />
   );
@@ -307,7 +315,12 @@ const TreeNodeItem = memo(function TreeNodeItem({
             data-tree-slug={node.slug}
           >
             {iconNode}
-            <span className="min-w-0 flex-1 truncate">{node.title}</span>
+            <span className={cn("min-w-0 flex-1 truncate", isDraft && "text-[var(--kp-text-3)]")}>{node.title}</span>
+            {isDraft && (
+              <span className="ml-1 shrink-0 rounded px-1 py-0.5 text-[10px] font-medium text-amber-600 bg-amber-100 dark:bg-amber-950 dark:text-amber-400">
+                草稿
+              </span>
+            )}
             {pinned && <Pin className="h-3 w-3 shrink-0 text-[var(--kp-brand-deep)]" />}
           </Link>
         ) : (
@@ -636,6 +649,21 @@ export function PostTreeNav({
         )}
       </div>
 
+      {!isSearchMode && gardenId && (
+        <Link
+          href={`/gardens/${encodeURIComponent(gardenId)}`}
+          scroll={false}
+          className={cn(
+            "mb-1 flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-sm font-medium transition",
+            pathname === `/gardens/${encodeURIComponent(gardenId)}`
+              ? "bg-[var(--kp-brand-soft)] text-[var(--kp-brand-deep)]"
+              : "text-[var(--kp-text-2)] hover:bg-[var(--kp-bg-mute)] hover:text-[var(--kp-text-1)]",
+          )}
+        >
+          <Home className="h-4 w-4 shrink-0" />
+          <span className="truncate">首页</span>
+        </Link>
+      )}
       {isSearchMode ? (
         <VirtualFlatList
           className="pb-3 pr-1 [overflow-anchor:none]"

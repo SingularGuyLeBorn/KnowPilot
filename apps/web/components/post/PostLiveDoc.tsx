@@ -81,7 +81,7 @@ export function PostLiveDoc({ post }: { post: PostLiveDocModel }) {
           )}
         >
           <ArrowLeft className="h-4 w-4" />
-          返回
+          {post.garden && post.garden !== DEFAULT_POST_GARDEN ? "返回首页" : "返回"}
         </Link>
         <span
           className="text-xs text-[var(--kp-text-3)]"

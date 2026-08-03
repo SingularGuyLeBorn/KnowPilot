@@ -61,6 +61,7 @@ content/posts/smoke-post-*.md
 content/uploads/vitest-test-file-*
 content/uploads/qq-img-*
 content/uploads/screenshots/
+content/uploads/imports/
 # 测试数据隔离（#2）：Vitest 用 test.db + .test-content/.test-config/.test-data，以下为 E2E/漏网 smoke 产物防御
 .test-content/
 .test-config/
