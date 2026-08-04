@@ -8,7 +8,7 @@ import {
   resumeSessionSchema, ensureMainSessionSchema, openNewSessionSchema, compactSessionSchema,
   setSessionGoalSchema, sessionGoalControlSchema, listSideRunsSchema, rotateLineageSchema,
   listRecentRotatesSchema, rotateGraphSchema, createSessionQueueItemSchema, reorderSessionQueueItemsSchema,
-  switchBranchSchema, sessionTreeSchema,
+  switchBranchSchema, sessionTreeSchema, forkSessionSchema,
 } from "@knowpilot/shared";
 import { router, publicProcedure } from "../../trpc/trpc.js";
 import { TRPCError } from "@trpc/server";
@@ -32,6 +32,70 @@ const createTrpcInvokerForCtx = createTrpcInvoker;
 
 export const sessionRouter = router({
   create: publicProcedure.meta({ description: "创建聊天会话。", aiReadable: true }).input(createSessionSchema).mutation(({ ctx, input }) => ctx.services.session.create(input)),
+  fork: publicProcedure
+    .meta({
+      description:
+        "从指定会话 Fork 出一个新会话：复制会话元数据（模型、系统提示、Agent）与最近 N 条消息树，保留分支结构。",
+      aiReadable: false,
+    })
+    .input(forkSessionSchema)
+    .mutation(async ({ ctx, input }) => {
+      const source = await ctx.services.session.getByIdLite(input.sourceSessionId);
+      if (!source) {
+        throw new TRPCError({ code: "NOT_FOUND", message: `源会话不存在: ${input.sourceSessionId}` });
+      }
+      const newTitle = input.title ?? `${source.title} 的分叉`;
+      const newSessionResult = await ctx.services.session.create({
+        title: newTitle,
+        model: source.model,
+        systemPrompt: source.systemPrompt ?? undefined,
+        agentId: source.agentId ?? undefined,
+        kind: "chat",
+        status: "active",
+      });
+      if (!newSessionResult.success || !newSessionResult.data) {
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: newSessionResult.error?.message ?? "Fork 会话失败",
+        });
+      }
+      const newSession = newSessionResult.data;
+
+      const { items } = await ctx.services.message.listForChat({
+        sessionId: source.id,
+        limit: input.includeMessages,
+        tree: true,
+      });
+
+      const { appendChatMessage } = await import("../chatTree.js");
+      const idMap = new Map<string, string>();
+      for (const msg of items) {
+        const oldParentId = msg.parentId ?? null;
+        const newParentId = oldParentId ? (idMap.get(oldParentId) ?? null) : null;
+        const created = await appendChatMessage(ctx.prisma, {
+          sessionId: newSession.id,
+          role: msg.role,
+          content: msg.content,
+          parentId: newParentId,
+          label: msg.label ?? undefined,
+          kind: msg.kind ?? undefined,
+          attachments: msg.attachments ?? undefined,
+          toolCalls: msg.toolCalls ?? undefined,
+          toolResults: msg.toolResults ?? undefined,
+          tokenUsage: msg.tokenUsage ?? undefined,
+          finishReason: msg.finishReason ?? undefined,
+          source: msg.source ?? undefined,
+        });
+        idMap.set(msg.id, created.id);
+      }
+
+      return {
+        id: newSession.id,
+        title: newSession.title,
+        sourceSessionId: source.id,
+        copiedMessages: items.length,
+      };
+    }),
   getById: publicProcedure.meta({ description: "获取会话详情（含消息列表）。", aiReadable: true }).input(z.object({ id: z.string().cuid() })).query(({ ctx, input }) => ctx.services.session.getById(input.id)),
   list: publicProcedure.meta({ description: "列出所有聊天会话。", aiReadable: true }).input(listSessionsSchema).query(({ ctx, input }) => ctx.services.session.list(input)),
   ensureMain: publicProcedure
