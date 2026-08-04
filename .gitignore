@@ -102,6 +102,8 @@ config/memories/*.md
 
 # 花园内软删回收站（勿入库）
 content/**/.trash/
+# 免费 API Key 本地兜底文件（含真实 key，不入库）
+content/free-keys-readme.md
 
 # Runtime generated trash / dev logs（整体忽略，可随时重建）
 .dev-log/

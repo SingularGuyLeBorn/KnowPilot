@@ -211,7 +211,7 @@ export async function fetchFreellmKeys(projectRoot: string): Promise<FreeKeyEntr
 
   const local =
     process.env.FREE_KEYS_LOCAL_FILE?.trim() ||
-    path.join(projectRoot, "content", "free-keys-readme.md");
+    path.join(projectRoot, "data", "free-keys-readme.md");
   try {
     if (fs.existsSync(local)) {
       const text = fs.readFileSync(local, "utf8");
