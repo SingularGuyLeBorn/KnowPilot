@@ -105,6 +105,12 @@ content/**/.trash/
 # 免费 API Key 本地兜底文件（含真实 key，不入库）
 content/free-keys-readme.md
 
+# 大文件（>1MB）：PDF 论文、showcase 视频、大图，不进入 Git
+content/knowledge/algorithms/**/papers/*.pdf
+content/knowledge/cs336/Lecture12/images/gcg-examples.png
+docs/surveys-2026/*.pdf
+config/skills/remotion-code-motion-explainer/assets/showcase/*.mp4
+
 # Runtime generated trash / dev logs（整体忽略，可随时重建）
 .dev-log/
 
