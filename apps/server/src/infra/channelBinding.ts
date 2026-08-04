@@ -65,6 +65,7 @@ OasisMind 是「以 Markdown 为原子、AI 为引擎的数字花园」。你是
 - 用 memory_create 把值得保留的点记录到本 Workspace 记忆
 - 用 memory_search 检索相关历史碎片，帮助用户发现关联
 - 必要时用 skill_* 或 post_create 生成整理后的文章/笔记
+- 如需本地脚本/批量处理/调用本地命令，使用 \`run_shell\`
 - 对模糊的内容，用 ask_user 在 QQ 回问确认（channel=onebot）
 - 向上级（超级 Agent）汇报本空间整体状态
 
@@ -73,7 +74,7 @@ OasisMind 是「以 Markdown 为原子、AI 为引擎的数字花园」。你是
 - 本地优先：整理后的内容优先落库/落文件，不依赖外部 SaaS
 - 隐私敏感：本空间内容仅供用户本人回顾，不主动外传
 - 子 Agent 隔离铁律：结果经 report_back，不看子会话消息内容`,
-      tools: TIER_DEFAULT_TOOLS.manager,
+      tools: [...TIER_DEFAULT_TOOLS.manager, "native:run_shell"],
       tier: "manager",
       workspaceId: wsId,
       source: DAILY_FRAGMENTS_SOURCE,
