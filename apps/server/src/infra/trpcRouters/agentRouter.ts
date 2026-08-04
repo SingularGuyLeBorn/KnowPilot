@@ -6,7 +6,7 @@ import { z } from "zod";
 import {
   createAgentSchema, updateAgentSchema, listAgentsSchema, agentRunSchema, agentChatSchema,
   submitAgentInjectSchema, editorAgentCompleteSchema, editorFormulaCopilotSchema,
-  deleteByIdWithApprovalSchema, runWorkflowSchema,
+  deleteByIdWithApprovalSchema, runWorkflowSchema, duplicateAgentSchema,
   createSessionQueueItemSchema, reorderSessionQueueItemsSchema,
 } from "@knowpilot/shared";
 import { router, publicProcedure } from "../../trpc/trpc.js";
@@ -38,6 +38,39 @@ const createTrpcInvokerForCtx = createTrpcInvoker;
 
 export const agentRouter = router({
   create: publicProcedure.meta({ description: "创建一个新的 AI Agent。name 必须唯一。", aiReadable: true }).input(createAgentSchema).mutation(({ ctx, input }) => ctx.services.agent.create(input)),
+  duplicate: publicProcedure
+    .meta({ description: "复制一个 Agent（允许重名，id 全局唯一）。超级 Agent 不可复制。", aiReadable: false })
+    .input(duplicateAgentSchema)
+    .mutation(async ({ ctx, input }) => {
+      const original = await ctx.services.agent.getById(input.id);
+      if (!original) {
+        throw new TRPCError({ code: "NOT_FOUND", message: `Agent 不存在: ${input.id}` });
+      }
+      if (original.tier === "super") {
+        throw new TRPCError({ code: "CONFLICT", message: "超级 Agent 不可复制，全局唯一。" });
+      }
+      const newName = input.name ?? original.name;
+      const result = await ctx.services.agent.create({
+        name: newName,
+        description: original.description ?? undefined,
+        model: original.model,
+        systemPrompt: original.systemPrompt,
+        tools: original.tools,
+        tier: original.tier,
+        workspaceId: original.workspaceId ?? undefined,
+        parentId: original.parentId ?? undefined,
+        heartbeatModel: original.heartbeatModel ?? undefined,
+        heartbeat: original.heartbeat ?? undefined,
+        source: "duplicate",
+      });
+      if (!result.success || !result.data) {
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: result.error?.message ?? "复制 Agent 失败",
+        });
+      }
+      return result;
+    }),
   getById: publicProcedure.meta({ description: "获取 Agent 详情。", aiReadable: true }).input(z.object({ id: z.string().cuid() })).query(({ ctx, input }) => ctx.services.agent.getById(input.id)),
   list: publicProcedure.meta({ description: "列出所有 Agent，支持分页和关键词搜索。", aiReadable: true }).input(listAgentsSchema).query(({ ctx, input }) => ctx.services.agent.list(input)),
   editorComplete: publicProcedure
