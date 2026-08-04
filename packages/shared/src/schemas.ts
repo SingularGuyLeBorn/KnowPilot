@@ -339,6 +339,11 @@ export const updateAgentSchema = z.object({
   status: agentStatusSchema.optional(),
 });
 
+export const duplicateAgentSchema = z.object({
+  id: z.string().cuid(),
+  name: safeEntityNameSchema.optional(),
+});
+
 export const listAgentsSchema = z.object({
   page: z.number().int().min(1).default(1),
   pageSize: z.number().int().min(1).max(100).default(20),
@@ -651,6 +656,12 @@ export const rotateGraphSchema = z.object({
 
 export const compactSessionSchema = z.object({
   id: z.string().cuid(),
+});
+
+export const forkSessionSchema = z.object({
+  sourceSessionId: z.string().cuid(),
+  title: z.string().min(1).max(200).optional(),
+  includeMessages: z.number().int().min(1).max(200).default(200),
 });
 
 export const listSessionsSchema = z.object({
