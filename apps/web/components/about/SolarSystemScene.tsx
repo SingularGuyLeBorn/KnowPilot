@@ -131,11 +131,11 @@ function OrbitRing({ radius }: { radius: number }) {
     return arr;
   }, [radius]);
   const geometry = useMemo(() => new THREE.BufferGeometry().setFromPoints(points), [points]);
-  return (
-    <line geometry={geometry}>
-      <lineBasicMaterial color="rgba(var(--kp-text-3-rgb), 0.2)" transparent opacity={0.18} />
-    </line>
+  const material = useMemo(
+    () => new THREE.LineBasicMaterial({ color: "rgba(var(--kp-text-3-rgb), 0.2)", transparent: true, opacity: 0.18 }),
+    [],
   );
+  return <primitive object={new THREE.Line(geometry, material)} />;
 }
 
 function AsteroidBelt() {
@@ -265,7 +265,7 @@ function StarField() {
   return (
     <points ref={ref}>
       <bufferGeometry>
-        <bufferAttribute attach="attributes-position" count={positions.length / 3} array={positions} itemSize={3} />
+        <bufferAttribute attach="attributes-position" args={[positions, 3]} />
       </bufferGeometry>
       <pointsMaterial size={0.5} color="#ffffff" transparent opacity={0.75} sizeAttenuation />
     </points>

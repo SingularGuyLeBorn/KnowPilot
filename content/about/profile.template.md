@@ -8,6 +8,8 @@ oneLiner: 正在造一个本地优先的 AI 数字花园。
 # 详细描述，hero 区用
 tagline: 写代码不是目的，做出东西才是。我相信 Agent 应该是可控、可观测的系统。
 location: 浙江
+# MBTI（可选，About Hero 会显示徽章；如 ENTJ）
+mbti: ENTJ
 site: https://github.com/SingularGuyLeBorn
 email: ""
 

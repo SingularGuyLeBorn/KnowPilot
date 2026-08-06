@@ -12,6 +12,7 @@ const MilkdownEditor = dynamic(
   { ssr: false }
 );
 import { usePostMutations } from "@/lib/usePostMutations";
+import { formatGardenId } from "@/lib/gardenDisplay";
 import { postDetailHref } from "@/lib/postHref";
 import { useAutoSave } from "@/lib/useAutoSave";
 import { trpc } from "@/lib/trpc";
@@ -58,8 +59,6 @@ function NewPostPageContent() {
       router.push(postDetailHref(slug, g));
     },
   });
-
-  const [createFolderIndex, setCreateFolderIndex] = useState(false);
 
   const handleCreate = () => {
     if (!title.trim()) return;
@@ -148,7 +147,7 @@ function NewPostPageContent() {
           >
             {(gardens?.items ?? [{ id: DEFAULT_POST_GARDEN, title: "博客" }]).map((g) => (
               <option key={g.id} value={g.id}>
-                {g.title} ({g.id})
+                {g.title} ({formatGardenId(g.id)})
               </option>
             ))}
           </select>

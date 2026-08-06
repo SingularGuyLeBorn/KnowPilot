@@ -85,6 +85,7 @@ describe("tRPC AI 工具 smoke（~100+ procedures）", () => {
       "post.tree",
       "post.categories",
       "post.tags",
+      "post.activityCalendar",
       "agent.list",
       "agent.llmProviders",
       "agent.llmBudgetStatus",

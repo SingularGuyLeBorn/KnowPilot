@@ -3,9 +3,8 @@
 import { useEffect } from "react";
 import Link from "next/link";
 import dynamic from "next/dynamic";
-import { OasisMindLogo } from "@/lib/icons";
 import { usePathname, useRouter } from "next/navigation";
-import { BookOpen, LayoutGrid, Menu, MessageSquare, UserCircle } from "lucide-react";
+import { BookOpen, Home, LayoutGrid, Menu, MessageSquare, Sofa, UserCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ThemeToggle } from "@/components/themeToggle";
 import type { LayoutMode } from "./layoutMode";
@@ -42,7 +41,12 @@ function isKnowledgeActive(pathname: string): boolean {
  */
 function isManageActive(pathname: string): boolean {
   if (isKnowledgeActive(pathname)) return false;
-  if (pathname.startsWith("/chat") || pathname.startsWith("/about") || pathname === "/login") {
+  if (
+    pathname.startsWith("/chat") ||
+    pathname.startsWith("/about") ||
+    pathname.startsWith("/office") ||
+    pathname === "/login"
+  ) {
     return false;
   }
   if (pathname === "/" || pathname === "") return false;
@@ -95,16 +99,15 @@ export function Navbar({ mode, onMenuClick, className }: NavbarProps) {
           </button>
         )}
 
-        <Link
-          href="/"
-          className="flex shrink-0 items-center gap-2 text-base font-semibold tracking-tight text-[var(--kp-ink)]"
-        >
-          <OasisMindLogo size={32} className="shrink-0" />
-          <span className="hidden sm:inline">见微</span>
-        </Link>
-
-        {/* 顶栏只留四入口：知识库 · 对话 · 关于我 · 管理（=原 Agents 工作台） */}
+        {/* 顶栏入口：首页 · 知识库 · 对话 · 关于我 · 办公室 · 管理 */}
         <nav className="hidden min-w-0 flex-1 items-center gap-0.5 overflow-x-auto md:flex">
+          <TopNavLink
+            href="/"
+            active={pathname === "/" || pathname === ""}
+            icon={<Home className="h-4 w-4" />}
+          >
+            首页
+          </TopNavLink>
           <TopNavLink href="/gardens" active={isKnowledgeActive(pathname)} icon={<BookOpen className="h-4 w-4" />}>
             知识库
           </TopNavLink>
@@ -118,6 +121,9 @@ export function Navbar({ mode, onMenuClick, className }: NavbarProps) {
           </TopNavLink>
           <TopNavLink href="/about" active={pathname.startsWith("/about")} icon={<UserCircle className="h-4 w-4" />}>
             关于我
+          </TopNavLink>
+          <TopNavLink href="/office" active={pathname.startsWith("/office")} icon={<Sofa className="h-4 w-4" />}>
+            办公室
           </TopNavLink>
           <TopNavLink
             href="/agents"

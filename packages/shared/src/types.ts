@@ -50,6 +50,8 @@ export interface Agent {
   model: string;
   systemPrompt: string;
   tools: string[];
+  /** null / "default" = 现状审批；unattended = 需审批直接拒绝；explore = 只读 */
+  permissionMode?: "default" | "unattended" | "explore" | null;
   // Swarm 层级
   tier: "super" | "manager" | "sub";
   workspaceId: string | null;
@@ -138,6 +140,8 @@ export interface Skill {
   icon: string | null;
   trigger: string | null;
   enabled: boolean;
+  /** 统一组织标签（API 为 string[]） */
+  tags: string[];
   metaJson?: string | null;
   createdAt: string | Date;
   updatedAt: string | Date;
@@ -166,6 +170,8 @@ export interface Memory {
   type: string;
   strength: number;
   keywords: string[];
+  /** 统一组织标签（与 Skill/Post 同约定） */
+  tags: string[];
   /** global | workspace:{id} | agent:{id} */
   scope?: string;
   agentId?: string | null;
@@ -454,6 +460,19 @@ export interface Credential {
   updatedAt: string | Date;
 }
 
+/** Run 执行时间线 span（Run.output.spans 的元素；轻量结构化 trace，非 OTel） */
+export interface RunSpan {
+  id: string;
+  kind: "llm" | "tool" | "compact" | "hitl";
+  name?: string;
+  round?: number;
+  startedAt: string;
+  endedAt?: string;
+  durationMs?: number;
+  status: "running" | "ok" | "error" | "aborted";
+  meta?: Record<string, unknown>;
+}
+
 /** About Me 页面 profile（来源 content/about/profile.md） */
 export interface AboutProfile {
   name: string;
@@ -464,6 +483,8 @@ export interface AboutProfile {
   github: string;
   site: string;
   email: string;
+  /** MBTI 类型，如 ENTJ */
+  mbti?: string;
   avatar?: string;
   focus: Array<{ title: string; description: string }>;
   roles: string[];

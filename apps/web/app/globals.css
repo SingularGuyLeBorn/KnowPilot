@@ -6,54 +6,57 @@
 
 :root {
   /*
-   * 见微视觉系统 —「墨色花园」
-   * 纸感底 + 鼠尾草品牌 + 青绿 accent，打破全盘莫兰迪暖灰单调；
-   * 禁止默认紫渐变 / 霓虹 / 纯 #fff·#000。
+   * 见微视觉系统 —「晴空玻璃」
+   * 杏桃暖光 + 天空蓝底 + #0087EB 品牌强调，玻璃拟态；
+   * 禁止默认紫渐变 / 霓虹。
    */
-  --kp-bg: #f3f5f2;
-  --kp-bg-alt: #eef1ec;
-  --kp-bg-soft: #e4e9e3;
-  --kp-bg-mute: #d9e0d7;
+  --kp-bg: #f4f9fd;
+  --kp-bg-alt: #ffffff;
+  --kp-bg-soft: #e8f3fc;
+  --kp-bg-mute: #d6ebf8;
 
-  --kp-text: #1c2420;
-  --kp-text-1: #1c2420;
-  --kp-text-2: #4f5c55;
-  --kp-text-3: #7a877f;
+  --kp-text: #111827;
+  --kp-text-1: #111827;
+  --kp-text-2: #4b5563;
+  --kp-text-3: #6b7280;
 
-  --kp-brand: #7d917f;
-  --kp-brand-1: #7d917f;
-  --kp-brand-light: #a8b9a6;
-  --kp-brand-dark: #5f7362;
-  --kp-brand-deep: #3a4f40;
-  --kp-brand-darker: #2b3b30;
-  --kp-brand-rgb: 125, 145, 127;
-  --kp-brand-soft: rgba(125, 145, 127, 0.14);
+  --kp-brand: #0087eb;
+  --kp-brand-1: #0087eb;
+  --kp-brand-light: #5bb4f5;
+  --kp-brand-dark: #006fbf;
+  --kp-brand-deep: #005a9e;
+  --kp-brand-darker: #0a4a85;
+  --kp-brand-rgb: 0, 135, 235;
+  --kp-brand-soft: rgba(0, 135, 235, 0.12);
 
-  /* 高对比点缀：CTA / 悬停光晕 / 强调线 */
-  --kp-accent: #1f8a7a;
-  --kp-accent-deep: #14685c;
-  --kp-accent-soft: rgba(31, 138, 122, 0.14);
-  --kp-accent-rgb: 31, 138, 122;
-  --kp-ink: #121916;
+  /* 暖杏点缀：背景光晕 / 次级强调（与品牌蓝互补） */
+  --kp-accent: #e8a84a;
+  --kp-accent-deep: #c4842e;
+  --kp-accent-soft: rgba(232, 168, 74, 0.16);
+  --kp-accent-rgb: 232, 168, 74;
+  --kp-ink: #0b1220;
 
-  --kp-divider: rgba(90, 110, 98, 0.18);
-  --kp-divider-light: rgba(90, 110, 98, 0.10);
+  /* 氛围色（渐变层） */
+  --kp-glow-peach: #ffe0ae;
+  --kp-glow-blue: #b1e3ff;
+
+  --kp-divider: rgba(17, 24, 39, 0.10);
+  --kp-divider-light: rgba(17, 24, 39, 0.06);
 
   /* 全局滚动条（原生 + ScrollArea 共用） */
   --kp-scrollbar-size: 8px;
-  --kp-scrollbar-thumb: color-mix(in srgb, var(--kp-brand) 42%, var(--kp-bg-mute));
-  --kp-scrollbar-thumb-hover: color-mix(in srgb, var(--kp-brand-deep) 38%, var(--kp-brand-light));
+  --kp-scrollbar-thumb: color-mix(in srgb, var(--kp-brand) 38%, var(--kp-bg-mute));
+  --kp-scrollbar-thumb-hover: color-mix(in srgb, var(--kp-brand-deep) 42%, var(--kp-brand-light));
   --kp-scrollbar-track: transparent;
 
-  /* 玻璃拟态（可选 accent） */
-  --kp-glass-bg: rgba(243, 245, 242, 0.82);
-  --kp-glass-border: rgba(255, 255, 255, 0.22);
+  /* 玻璃拟态 */
+  --kp-glass-bg: rgba(255, 255, 255, 0.58);
+  --kp-glass-border: rgba(255, 255, 255, 0.42);
 
   /* 动态曲线 */
   --kp-spring-gentle: cubic-bezier(0.22, 1, 0.36, 1);
 
-  /* Tailwind v4 theme tokens — 映射到莫兰迪 kp 主题，避免 shadcn 组件渲染纯白/纯黑
-     与 --kp-* 底色脱节（finesse substrate：no pure #fff / #000，所有中性色向品牌色微调） */
+  /* Tailwind v4 theme tokens — 映射到晴空玻璃 kp 主题 */
   --background: var(--kp-bg);
 
   --foreground: var(--kp-text-1);
@@ -66,9 +69,9 @@
 
   --popover-foreground: var(--kp-text-1);
 
-  --primary: var(--kp-brand-deep);
+  --primary: var(--kp-brand);
 
-  --primary-foreground: oklch(0.985 0 0);
+  --primary-foreground: #ffffff;
 
   --secondary: var(--kp-bg-soft);
 
@@ -106,9 +109,9 @@
 
   --sidebar-foreground: var(--kp-text-1);
 
-  --sidebar-primary: var(--kp-brand-dark);
+  --sidebar-primary: var(--kp-brand);
 
-  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-primary-foreground: #ffffff;
 
   --sidebar-accent: var(--kp-bg-soft);
 
@@ -119,43 +122,44 @@
   --sidebar-ring: var(--kp-brand);
 }
 
-/* 深色模式 — 墨色花园 */
+/* 深色模式 — 晴空玻璃（深蓝夜空） */
 html.dark,
 .dark {
-  --kp-bg: #121816;
-  --kp-bg-alt: #1a211e;
-  --kp-bg-soft: #232c28;
-  --kp-bg-mute: #2e3934;
+  --kp-bg: #0b1220;
+  --kp-bg-alt: #121a2b;
+  --kp-bg-soft: #1a2540;
+  --kp-bg-mute: #243352;
 
-  --kp-text: #e6ebe7;
-  --kp-text-1: #eef3ef;
-  --kp-text-2: #a8b5ad;
-  --kp-text-3: #7d8c84;
+  --kp-text: #e8eef8;
+  --kp-text-1: #f1f5fb;
+  --kp-text-2: #9aabc4;
+  --kp-text-3: #6f829c;
 
-  --kp-brand: #9bb09a;
-  --kp-brand-1: #a8bca7;
-  --kp-brand-light: #c2d2c0;
-  --kp-brand-dark: #7d917f;
-  --kp-brand-deep: #6a8070;
-  --kp-brand-darker: #55685c;
-  --kp-brand-rgb: 155, 176, 154;
-  --kp-brand-soft: rgba(155, 176, 154, 0.16);
+  --kp-brand: #4ba3f5;
+  --kp-brand-1: #5bb4f5;
+  --kp-brand-light: #8cc9f8;
+  --kp-brand-dark: #2b8ce8;
+  --kp-brand-deep: #1a74d0;
+  --kp-brand-darker: #145aa3;
+  --kp-brand-rgb: 75, 163, 245;
+  --kp-brand-soft: rgba(75, 163, 245, 0.16);
 
-  --kp-accent: #3db8a6;
-  --kp-accent-deep: #2a9d8c;
-  --kp-accent-soft: rgba(61, 184, 166, 0.16);
-  --kp-accent-rgb: 61, 184, 166;
-  --kp-ink: #0b100e;
+  --kp-accent: #e8b86d;
+  --kp-accent-deep: #d49a45;
+  --kp-accent-soft: rgba(232, 184, 109, 0.16);
+  --kp-accent-rgb: 232, 184, 109;
+  --kp-ink: #060a12;
+
+  --kp-glow-peach: #c4924a;
+  --kp-glow-blue: #1e4a7a;
 
   --kp-divider: rgba(255, 255, 255, 0.10);
   --kp-divider-light: rgba(255, 255, 255, 0.06);
 
-  --kp-glass-bg: rgba(18, 24, 22, 0.82);
+  --kp-glass-bg: rgba(18, 26, 43, 0.72);
   --kp-glass-border: rgba(255, 255, 255, 0.10);
 
-  /* 暗色模式：primary 提亮为浅 brand，保证 text-primary 链接在深底上达 WCAG AA
-     （brand-deep #7e6a55 在暗底仅 ~3.4:1 不达标；brand-light #e0d2cd 达 ~11:1）。
-     primary-foreground 同步改深色，使 bg-primary 按钮=浅底深字亦达 AA。 */
+  /* 暗色：primary 用亮蓝保证链接/按钮对比度 */
   --primary: var(--kp-brand-light);
   --primary-foreground: var(--kp-bg);
   --sidebar-primary: var(--kp-brand-light);
@@ -243,9 +247,22 @@ html.dark,
 /* 主题由 ThemeProvider 在客户端通过 .dark 类切换；shadcn/ui tokens 同步覆盖 */
 
 body {
-  background: var(--kp-bg);
+  background:
+    radial-gradient(ellipse 75% 55% at 78% 0%, color-mix(in srgb, var(--kp-glow-peach) 55%, transparent), transparent 58%),
+    radial-gradient(ellipse 70% 50% at 8% 95%, color-mix(in srgb, var(--kp-glow-blue) 70%, transparent), transparent 55%),
+    radial-gradient(ellipse 50% 40% at 50% 40%, color-mix(in srgb, var(--kp-glow-peach) 18%, transparent), transparent 60%),
+    var(--kp-bg);
+  background-attachment: fixed;
   color: var(--kp-text);
   font-family: var(--font-geist-sans), system-ui, -apple-system, sans-serif;
+}
+html.dark body,
+.dark body {
+  background:
+    radial-gradient(ellipse 70% 50% at 80% 0%, color-mix(in srgb, var(--kp-glow-peach) 22%, transparent), transparent 55%),
+    radial-gradient(ellipse 65% 45% at 10% 100%, color-mix(in srgb, var(--kp-brand) 18%, transparent), transparent 50%),
+    var(--kp-bg);
+  background-attachment: fixed;
 }
 
 /* 全局默认 instant 滚动，避免路由切换时出现 smooth 滚动导致的「跳一下」 */
@@ -370,7 +387,7 @@ html.dark .kp-card,
     var(--kp-bg);
 }
 
-/* Markdown 渲染：代码块 / 行内代码 / 数学公式 —— 莫兰迪主题
+/* Markdown 渲染：代码块 / 行内代码 / 数学公式 —— 晴空玻璃主题
    行内 code 必须排除 pre 内：否则 display:inline + 背景/边框会按「行片段」
    逐行画出白色小圆角框；块级 chrome 只由 .kp-code-block 承担，避免 pre 再套一层圆角造成角落 gap。 */
 .prose pre {
@@ -752,7 +769,7 @@ html.dark .kp-card,
   word-break: inherit;
 }
 
-/* shadcn/ui 主题覆盖为 KnowPilot 莫兰迪色系 */
+/* shadcn/ui 主题覆盖为 KnowPilot 晴空玻璃色系 */
 @layer base {
   :root {
     --background: var(--kp-bg);
@@ -814,7 +831,7 @@ html.dark .kp-card,
   }
 }
 
-/* 标题锚点：hover 显示 # 数量 = 标题级别 */
+/* 标题锚点：hover 显示 # 数量 = 标题级别；字号与标题正文一致 */
 .kp-heading-anchor {
   position: absolute;
   left: -0.25rem;
@@ -827,16 +844,17 @@ html.dark .kp-card,
   color: var(--kp-text-3);
   opacity: 0;
   transition: opacity 0.15s, color 0.15s;
-  font-size: inherit;
-  line-height: 1;
+  font-size: 1em;
+  font-weight: inherit;
+  line-height: inherit;
 }
 
 .kp-heading-level {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-family: inherit;
   font-size: 1em;
-  font-weight: 500;
-  line-height: 1;
-  letter-spacing: -0.02em;
+  font-weight: inherit;
+  line-height: inherit;
+  letter-spacing: inherit;
 }
 
 .group:hover .kp-heading-anchor,
@@ -951,21 +969,21 @@ code.kp-inline-code::after {
   padding-left: 2rem;
 }
 
-/* 页内搜索高亮 — 莫兰迪暖杏色，与主题融合 */
+/* 页内搜索高亮 — 品牌蓝软底 + 杏桃当前项 */
 mark.kp-page-search-mark {
   background: var(--kp-brand-soft);
-  color: var(--kp-brand-dark);
+  color: var(--kp-brand-deep);
   border-radius: 0.125rem;
   padding: 0 0.1rem;
 }
 
 mark.kp-page-search-mark.kp-page-search-current {
-  background: rgba(184, 160, 144, 0.32);
-  box-shadow: 0 0 0 2px rgba(184, 160, 144, 0.35);
+  background: color-mix(in srgb, var(--kp-glow-peach) 55%, transparent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--kp-accent) 40%, transparent);
 }
 
 /* ═══════════════════════════════════════════════════════
-   全局滚动条 — 莫兰迪主题（覆盖所有原生 overflow 滚动）
+   全局滚动条 — 晴空玻璃主题（覆盖所有原生 overflow 滚动）
    Firefox: scrollbar-*；Chromium/Safari: ::-webkit-scrollbar
    显式隐藏滚动条的元素（如 [scrollbar-width:none]）仍可覆盖本规则。
    ═══════════════════════════════════════════════════════ */
@@ -1118,7 +1136,7 @@ mark.kp-page-search-mark.kp-page-search-current {
 /* ============================================================
  * finesse Premium Substrate — 让界面「读起来贵」的物理层
  * 参考 finesse design-dna：颗粒 / 暗角 / 字体张力 / 半透明边框 /
- * focus ring / reduced-motion。在莫兰迪基调上叠加，不替换既有令牌。
+ * focus ring / reduced-motion。在晴空玻璃基调上叠加，不替换既有令牌。
  * ============================================================ */
 
 /* 颗粒：固定 feTurbulence 噪点层，极低透明度，消除「扁平矢量 slop」观感 */
@@ -1176,7 +1194,7 @@ html.dark .kp-vignette::after,
   border-top: 1px solid var(--kp-divider);
 }
 
-/* 统一 focus-visible：莫兰迪品牌环 + 足够对比，键盘可达性。
+/* 统一 focus-visible：品牌蓝环 + 足够对比，键盘可达性。
    排除 textarea：聊天等复合输入卡片用外框 focus-within 提示焦点，
    内层 textarea 再画 outline 会在工具栏上方形成一条「假横线」。 */
 :where(a, button, [role="button"], input:not([type="hidden"]), select, [tabindex]):focus-visible {
@@ -1242,14 +1260,16 @@ html.dark .kp-shadow-lg,
   box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3), 0 12px 28px rgba(0, 0, 0, 0.28);
 }
 
-/* 高级卡片：表面 + 顶部品牌/accent 高光 + 微浮起 */
+/* 高级卡片：玻璃表面 + 顶部品牌/杏桃高光 + 微浮起 */
 .kp-card-premium {
   position: relative;
-  background: var(--kp-bg-alt);
-  border: 1px solid var(--kp-divider);
+  background: color-mix(in srgb, var(--kp-glass-bg) 88%, var(--kp-bg-alt));
+  border: 1px solid color-mix(in srgb, var(--kp-glass-border) 70%, var(--kp-divider));
   box-shadow:
     0 1px 2px rgba(var(--kp-brand-rgb), 0.06),
-    0 6px 20px rgba(var(--kp-brand-rgb), 0.06);
+    0 8px 28px rgba(var(--kp-brand-rgb), 0.08);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
   overflow: hidden;
 }
 .kp-card-premium::before {
@@ -1264,7 +1284,19 @@ html.dark .kp-shadow-lg,
     rgba(var(--kp-accent-rgb), 0.55),
     transparent
   );
-  opacity: 0.85;
+  opacity: 0.4;
+  transform: scaleX(0.82);
+  transition:
+    opacity 0.3s ease,
+    transform 0.5s cubic-bezier(0.22, 1, 0.36, 1);
+  pointer-events: none;
+}
+/* 交互卡片 hover：顶部渐变光线点亮并横向扩散（视频同款动效） */
+.kp-card-premium.kp-card-interactive:hover::before,
+a.kp-card-premium:hover::before,
+button.kp-card-premium:hover::before {
+  opacity: 1;
+  transform: scaleX(1);
 }
 html.dark .kp-card-premium,
 .dark .kp-card-premium {
@@ -1272,7 +1304,15 @@ html.dark .kp-card-premium,
 }
 html.dark .kp-card-premium::before,
 .dark .kp-card-premium::before {
-  opacity: 0.65;
+  opacity: 0.3;
+}
+html.dark .kp-card-premium.kp-card-interactive:hover::before,
+html.dark a.kp-card-premium:hover::before,
+html.dark button.kp-card-premium:hover::before,
+.dark .kp-card-premium.kp-card-interactive:hover::before,
+.dark a.kp-card-premium:hover::before,
+.dark button.kp-card-premium:hover::before {
+  opacity: 0.9;
 }
 
 /* 数据徽章：趋势/状态一目了然 */
@@ -1332,13 +1372,13 @@ html.dark .kp-badge-info,
   border-color: rgba(59, 130, 246, 0.28);
 }
 
-/* 渐变数字：关键指标更醒目（墨色花园 brand → accent） */
+/* 渐变数字：关键指标更醒目（品牌蓝 → 暖杏） */
 .kp-stat-number {
   font-size: 1.75rem;
   font-weight: 800;
   letter-spacing: -0.02em;
   line-height: 1.1;
-  background: linear-gradient(135deg, var(--kp-brand-deep), var(--kp-accent));
+  background: linear-gradient(135deg, var(--kp-brand-deep), var(--kp-brand), var(--kp-accent));
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -1543,43 +1583,124 @@ html.dark .kp-badge-info,
 .kp-progress-bar {
   height: 100%;
   border-radius: 999px;
-  background: linear-gradient(90deg, var(--kp-brand), var(--kp-accent));
+  background: linear-gradient(90deg, var(--kp-brand-dark), var(--kp-brand), var(--kp-brand-light));
   transition: width 0.4s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-/* 悬浮微浮起 */
-.kp-lift {
-  transition: transform 0.18s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.18s cubic-bezier(0.22, 1, 0.36, 1);
+/* 交互卡片（Framer Motion 管 transform 的卡片用）：hover 阴影绽放 + 边框提亮。
+   transform 由 whileHover 负责，此处不含，避免与 inline transform 冲突。 */
+.kp-card-interactive {
+  transition:
+    box-shadow 0.22s cubic-bezier(0.22, 1, 0.36, 1),
+    border-color 0.22s ease;
 }
-.kp-lift:hover {
-  transform: translateY(-2px);
+.kp-card-interactive:hover {
+  border-color: rgba(var(--kp-brand-rgb), 0.38);
   box-shadow:
-    0 4px 8px rgba(var(--kp-brand-rgb), 0.1),
-    0 12px 28px rgba(var(--kp-accent-rgb), 0.1);
+    0 2px 6px rgba(var(--kp-brand-rgb), 0.08),
+    0 16px 40px -8px rgba(var(--kp-brand-rgb), 0.22),
+    0 8px 20px -10px rgba(var(--kp-accent-rgb), 0.16);
 }
-html.dark .kp-lift:hover,
-.dark .kp-lift:hover {
-  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.32), 0 12px 28px rgba(0, 0, 0, 0.3);
+html.dark .kp-card-interactive:hover,
+.dark .kp-card-interactive:hover {
+  border-color: rgba(var(--kp-brand-rgb), 0.45);
+  box-shadow:
+    0 2px 6px rgba(0, 0, 0, 0.3),
+    0 16px 40px -8px rgba(0, 0, 0, 0.42),
+    0 0 24px -6px rgba(var(--kp-brand-rgb), 0.25);
+}
+
+/* 斜向光泽扫过（hover 时一道高光掠过卡面） */
+.kp-card-sheen {
+  position: relative;
+  overflow: hidden;
+}
+.kp-card-sheen::after {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  background: linear-gradient(
+    105deg,
+    transparent 42%,
+    rgba(255, 255, 255, 0.38) 50%,
+    transparent 58%
+  );
+  transform: translateX(-135%) skewX(-8deg);
+  transition: transform 0.8s cubic-bezier(0.22, 1, 0.36, 1);
+  pointer-events: none;
+  z-index: 20;
+}
+.kp-card-sheen:hover::after {
+  transform: translateX(135%) skewX(-8deg);
+}
+html.dark .kp-card-sheen::after,
+.dark .kp-card-sheen::after {
+  background: linear-gradient(
+    105deg,
+    transparent 42%,
+    rgba(255, 255, 255, 0.1) 50%,
+    transparent 58%
+  );
+}
+
+/* 顶部渐变光线（非 kp-card-premium 的玻璃卡用）：hover 点亮并扩散 */
+.kp-card-topline {
+  position: relative;
+  overflow: hidden;
+}
+.kp-card-topline::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 2px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(var(--kp-brand-rgb), 0.55),
+    rgba(var(--kp-accent-rgb), 0.6),
+    transparent
+  );
+  opacity: 0;
+  transform: scaleX(0.7);
+  transition:
+    opacity 0.3s ease,
+    transform 0.5s cubic-bezier(0.22, 1, 0.36, 1);
+  pointer-events: none;
+  z-index: 2;
+}
+.kp-card-topline:hover::before {
+  opacity: 1;
+  transform: scaleX(1);
 }
 
 /* ── 管理页 / Chat 壳表面（仅视觉，不改交互） ── */
 
-/* 管理主栏：角落淡墨晕，与首页墨色花园同调 */
+/* 管理主栏：角落杏桃 / 天蓝晕（透出 body 渐变） */
 .kp-admin-surface {
   background:
-    radial-gradient(ellipse 70% 42% at 0% 0%, rgba(var(--kp-brand-rgb), 0.08), transparent 55%),
-    radial-gradient(ellipse 55% 36% at 100% 0%, rgba(var(--kp-accent-rgb), 0.07), transparent 50%),
-    var(--kp-bg);
+    radial-gradient(ellipse 70% 42% at 0% 0%, color-mix(in srgb, var(--kp-glow-blue) 45%, transparent), transparent 55%),
+    radial-gradient(ellipse 55% 36% at 100% 0%, color-mix(in srgb, var(--kp-glow-peach) 50%, transparent), transparent 50%),
+    transparent;
 }
 
-/* 侧栏轨道：纵向微渐变 */
+/* Chat 中栏：轻玻璃 + 同系光晕 */
+.kp-chat-surface {
+  background:
+    radial-gradient(ellipse 55% 40% at 100% 0%, color-mix(in srgb, var(--kp-glow-peach) 35%, transparent), transparent 55%),
+    radial-gradient(ellipse 50% 35% at 0% 100%, color-mix(in srgb, var(--kp-glow-blue) 40%, transparent), transparent 50%),
+    color-mix(in srgb, var(--kp-glass-bg) 35%, transparent);
+}
+
+/* 侧栏轨道：玻璃白 + 微蓝 */
 .kp-shell-rail {
   background: linear-gradient(
     180deg,
-    color-mix(in srgb, var(--kp-bg-alt) 88%, rgba(var(--kp-brand-rgb), 0.12)),
-    var(--kp-bg-alt) 40%,
-    var(--kp-bg-alt)
+    color-mix(in srgb, var(--kp-glass-bg) 90%, rgba(var(--kp-brand-rgb), 0.08)),
+    color-mix(in srgb, var(--kp-bg-alt) 92%, transparent) 40%,
+    color-mix(in srgb, var(--kp-bg-alt) 88%, transparent)
   );
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
 }
 
 /* 页头图标井 */
@@ -1602,27 +1723,32 @@ html.dark .kp-lift:hover,
 .kp-nav-rail-active {
   background: var(--kp-brand-soft);
   color: var(--kp-brand-deep);
-  box-shadow: inset 3px 0 0 0 var(--kp-accent);
+  box-shadow: inset 3px 0 0 0 var(--kp-brand);
 }
 
 /* Chat 输入框表面 */
 .kp-chat-composer {
+  background: color-mix(in srgb, var(--kp-glass-bg) 88%, white);
+  border-color: var(--kp-glass-border);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
   box-shadow:
-    0 1px 2px rgba(var(--kp-brand-rgb), 0.05),
-    0 8px 22px rgba(var(--kp-brand-rgb), 0.06);
+    0 1px 2px rgba(var(--kp-brand-rgb), 0.06),
+    0 10px 28px rgba(var(--kp-brand-rgb), 0.1);
 }
 .kp-chat-composer:focus-within {
+  border-color: color-mix(in srgb, var(--kp-brand) 35%, var(--kp-glass-border));
   box-shadow:
-    0 0 0 3px var(--kp-accent-soft),
-    0 8px 24px rgba(var(--kp-accent-rgb), 0.1);
+    0 0 0 3px var(--kp-brand-soft),
+    0 10px 28px rgba(var(--kp-brand-rgb), 0.14);
 }
 /* 统一抽象图标（渐变 + 透明背景） */
 .kp-hero-mesh {
   position: relative;
   background:
-    radial-gradient(70% 55% at 20% 25%, rgba(var(--kp-accent-rgb), 0.13), transparent 50%),
-    radial-gradient(60% 60% at 85% 20%, rgba(var(--kp-brand-rgb), 0.11), transparent 50%),
-    radial-gradient(65% 45% at 50% 90%, rgba(var(--kp-accent-rgb), 0.10), transparent 50%),
+    radial-gradient(70% 55% at 20% 25%, color-mix(in srgb, var(--kp-glow-blue) 55%, transparent), transparent 50%),
+    radial-gradient(60% 60% at 85% 20%, color-mix(in srgb, var(--kp-glow-peach) 60%, transparent), transparent 50%),
+    radial-gradient(65% 45% at 50% 90%, rgba(var(--kp-brand-rgb), 0.12), transparent 50%),
     var(--kp-bg);
   background-size: 200% 200%;
   animation: kp-mesh-drift 18s ease-in-out infinite alternate;
@@ -1636,67 +1762,428 @@ html.dark .kp-lift:hover,
   .kp-hero-mesh { animation: none; }
 }
 
-/* 高密度卡片系统：减少 padding，让一页容纳更多内容 */
+/* 氛围光斑缓慢漂移（品牌卡等动态背景用） */
+.kp-animate-drift-a {
+  animation: kp-drift-a 14s ease-in-out infinite;
+}
+.kp-animate-drift-b {
+  animation: kp-drift-b 18s ease-in-out infinite;
+}
+@keyframes kp-drift-a {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  33% { transform: translate(26px, 16px) scale(1.08); }
+  66% { transform: translate(-16px, 24px) scale(0.94); }
+}
+@keyframes kp-drift-b {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  50% { transform: translate(-28px, -20px) scale(1.1); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .kp-animate-drift-a,
+  .kp-animate-drift-b { animation: none; }
+}
+
+/* 太阳系轨道公转（首页 CTA）；--orbit-duration 由行内样式按行星注入 */
+.kp-orbit-spin {
+  animation: kp-orbit var(--orbit-duration, 20s) linear infinite;
+}
+.kp-orbit-spin-reverse {
+  animation: kp-orbit var(--orbit-duration, 20s) linear infinite reverse;
+}
+@keyframes kp-orbit {
+  to { transform: rotate(360deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .kp-orbit-spin,
+  .kp-orbit-spin-reverse { animation: none; }
+}
+
+/* 高密度卡片：玻璃表面 */
 .kp-card-dense {
-  background: color-mix(in srgb, var(--kp-bg-alt) 92%, white);
-  border: 1px solid var(--kp-divider);
+  background: color-mix(in srgb, var(--kp-glass-bg) 90%, white);
+  border: 1px solid color-mix(in srgb, var(--kp-glass-border) 75%, var(--kp-divider));
   border-radius: 1rem;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
   box-shadow:
     0 1px 2px rgba(var(--kp-brand-rgb), 0.06),
-    0 8px 24px rgba(var(--kp-brand-rgb), 0.06);
-  transition: transform 0.2s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.2s cubic-bezier(0.22, 1, 0.36, 1), border-color 0.2s ease;
+    0 10px 28px rgba(var(--kp-brand-rgb), 0.08);
+  transition: transform 0.2s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.2s cubic-bezier(0.22, 1, 0.36, 1), border-color 0.2s ease, background 0.2s ease;
 }
 .kp-card-dense:hover {
   transform: translateY(-2px);
-  border-color: color-mix(in srgb, var(--kp-brand) 28%, var(--kp-divider));
+  border-color: color-mix(in srgb, var(--kp-brand) 32%, var(--kp-divider));
+  background: color-mix(in srgb, var(--kp-glass-bg) 96%, white);
   box-shadow:
     0 1px 2px rgba(var(--kp-brand-rgb), 0.06),
-    0 12px 28px rgba(var(--kp-brand-rgb), 0.1);
+    0 14px 32px rgba(var(--kp-brand-rgb), 0.14);
 }
 html.dark .kp-card-dense,
 .dark .kp-card-dense {
-  background: var(--kp-bg-alt);
+  background: var(--kp-glass-bg);
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.24), 0 8px 24px rgba(0, 0, 0, 0.18);
 }
 html.dark .kp-card-dense:hover,
 .dark .kp-card-dense:hover {
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.24), 0 12px 28px rgba(0, 0, 0, 0.28);
 }
+
+/* ============================================================
+ * Motion Anything — 多彩流动动效体系（浅色背景优先）
+ * 参考 FluxEdit / arounda 玻璃拟态、非线性布局、流体曲线、光谱线
+ * ============================================================ */
+
+/* 垂直光谱线：浅色背景上的柔和动态纹理
+ * 禁止 overflow:hidden —— 管理页 AdminPage 挂 kp-spectrum 时若再裁切，
+ * 会与 flex-1 叠成「主栏不增高、内容被吃掉、整页无法滚动」。
+ * 装饰线靠 ::before + mask 自裁，不依赖父级 overflow。 */
+.kp-spectrum {
+  position: relative;
+}
+.kp-spectrum::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.18;
+  background-image:
+    repeating-linear-gradient(
+      90deg,
+      transparent 0px,
+      transparent 12px,
+      color-mix(in srgb, var(--kp-brand) 35%, transparent) 12px,
+      color-mix(in srgb, var(--kp-brand) 35%, transparent) 13px
+    );
+  mask-image: linear-gradient(180deg, transparent 0%, black 40%, black 70%, transparent 100%);
+  -webkit-mask-image: linear-gradient(180deg, transparent 0%, black 40%, black 70%, transparent 100%);
+  animation: kp-spectrum-drift 24s ease-in-out infinite alternate;
+}
+html.dark .kp-spectrum::before,
+.dark .kp-spectrum::before {
+  opacity: 0.12;
+}
+@keyframes kp-spectrum-drift {
+  0% { transform: translateX(0) scaleY(1); }
+  100% { transform: translateX(-24px) scaleY(1.08); }
+}
+
+/* 流体渐变 blob：给卡片/背景叠加的彩色光晕 */
+.kp-fluid-blob {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(64px);
+  opacity: 0.35;
+  pointer-events: none;
+  animation: kp-fluid-morph 16s ease-in-out infinite alternate;
+}
+@keyframes kp-fluid-morph {
+  0% { border-radius: 60% 40% 30% 70% / 60% 30% 70% 40%; transform: translate(0, 0) scale(1); }
+  50% { border-radius: 30% 60% 70% 40% / 50% 60% 30% 60%; transform: translate(12px, -18px) scale(1.05); }
+  100% { border-radius: 60% 40% 70% 30% / 40% 60% 50% 60%; transform: translate(-10px, 10px) scale(0.98); }
+}
+
+/* 玻璃胶囊：药丸形玻璃控件 */
+.kp-glass-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.35rem 0.85rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  background: color-mix(in srgb, var(--kp-glass-bg) 90%, white);
+  border: 1px solid var(--kp-glass-border);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  box-shadow: 0 1px 2px rgba(var(--kp-brand-rgb), 0.06), 0 4px 12px rgba(var(--kp-accent-rgb), 0.06);
+  transition: transform 0.18s var(--kp-spring-gentle), box-shadow 0.18s var(--kp-spring-gentle), border-color 0.18s ease;
+}
+.kp-glass-pill:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 6px rgba(var(--kp-brand-rgb), 0.1), 0 8px 20px rgba(var(--kp-accent-rgb), 0.1);
+  border-color: color-mix(in srgb, var(--kp-brand) 30%, var(--kp-glass-border));
+}
+
+/* 渐变文字：品牌蓝→暖杏 */
+.kp-text-gradient {
+  background: linear-gradient(135deg, var(--kp-brand-deep), var(--kp-brand), var(--kp-accent));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* Serif 标题：轻量衬线展示字 */
+.kp-display-serif {
+  font-family: "Instrumental Serif", "Noto Serif SC", ui-serif, Georgia, "Times New Roman", serif;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+  line-height: 1.05;
+}
+
+/* 3D 倾斜卡片容器 */
+.kp-tilt {
+  transform-style: preserve-3d;
+  transition: transform 0.25s var(--kp-spring-gentle);
+  will-change: transform;
+}
+.kp-tilt:hover {
+  transform: perspective(800px) rotateX(var(--tilt-x, 0deg)) rotateY(var(--tilt-y, 0deg)) scale3d(1.02, 1.02, 1.02);
+}
+
+/* 脉冲光环（CTA / 状态指示） */
+.kp-pulse-ring {
+  position: relative;
+}
+.kp-pulse-ring::after {
+  content: "";
+  position: absolute;
+  inset: -6px;
+  border-radius: inherit;
+  border: 1px solid color-mix(in srgb, var(--kp-brand) 40%, transparent);
+  animation: kp-pulse-ring 2.4s ease-out infinite;
+  pointer-events: none;
+}
+@keyframes kp-pulse-ring {
+  0% { transform: scale(1); opacity: 0.6; }
+  100% { transform: scale(1.25); opacity: 0; }
+}
+
+/* 闪耀 shimmer：用于加载骨架和按钮 */
+.kp-shimmer {
+  position: relative;
+  overflow: hidden;
+}
+.kp-shimmer::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    105deg,
+    transparent 0%,
+    transparent 40%,
+    rgba(255, 255, 255, 0.45) 50%,
+    transparent 60%,
+    transparent 100%
+  );
+  transform: translateX(-100%);
+  animation: kp-shimmer 2.2s infinite;
+  pointer-events: none;
+}
+html.dark .kp-shimmer::after,
+.dark .kp-shimmer::after {
+  background: linear-gradient(
+    105deg,
+    transparent 0%,
+    transparent 40%,
+    rgba(255, 255, 255, 0.08) 50%,
+    transparent 60%,
+    transparent 100%
+  );
+}
+@keyframes kp-shimmer {
+  100% { transform: translateX(100%); }
+}
+
+/* 路由跳转顶栏进度 */
+.kp-nav-progress-run {
+  width: 100%;
+  transform-origin: left center;
+  animation: kp-nav-progress-run 8s cubic-bezier(0.12, 0.7, 0.2, 1) forwards;
+}
+.kp-nav-progress-done {
+  width: 100%;
+  transform-origin: left center;
+  transform: scaleX(1);
+  transition: opacity 0.28s ease, transform 0.22s cubic-bezier(0.22, 1, 0.36, 1);
+}
+@keyframes kp-nav-progress-run {
+  0% { transform: scaleX(0.06); }
+  15% { transform: scaleX(0.28); }
+  40% { transform: scaleX(0.55); }
+  70% { transform: scaleX(0.78); }
+  100% { transform: scaleX(0.9); }
+}
+
+/* 呼吸动画 */
+.kp-breathe {
+  animation: kp-breathe 5s ease-in-out infinite;
+}
+@keyframes kp-breathe {
+  0%, 100% { transform: scale(1); opacity: 0.85; }
+  50% { transform: scale(1.04); opacity: 1; }
+}
+
+/* 弹跳点 loading */
+.kp-dot-bounce {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+.kp-dot-bounce span {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  background: var(--kp-brand);
+  animation: kp-dot-bounce 1.2s ease-in-out infinite;
+}
+.kp-dot-bounce span:nth-child(2) { animation-delay: 0.15s; background: var(--kp-accent); }
+.kp-dot-bounce span:nth-child(3) { animation-delay: 0.3s; background: var(--kp-brand-light); }
+@keyframes kp-dot-bounce {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
+}
+
+/* 错落入场 */
+@keyframes kp-stagger-in {
+  from { opacity: 0; transform: translateY(20px) scale(0.96); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+.kp-stagger-in {
+  animation: kp-stagger-in 0.6s var(--kp-spring-gentle) both;
+}
+
+/* 流动曲线装饰（SVG/伪元素） */
+.kp-wave-line {
+  stroke-dasharray: 200;
+  stroke-dashoffset: 200;
+  animation: kp-wave-draw 3s ease-in-out infinite alternate;
+}
+@keyframes kp-wave-draw {
+  0% { stroke-dashoffset: 200; }
+  100% { stroke-dashoffset: 0; }
+}
+
+/* 彩色投影：浅色背景替代纯黑阴影 */
+.kp-shadow-vivid {
+  box-shadow:
+    0 1px 2px rgba(var(--kp-brand-rgb), 0.08),
+    0 8px 24px rgba(var(--kp-brand-rgb), 0.12),
+    0 20px 48px rgba(var(--kp-accent-rgb), 0.08);
+}
+html.dark .kp-shadow-vivid,
+.dark .kp-shadow-vivid {
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.32), 0 20px 48px rgba(0, 0, 0, 0.26);
+}
+
+/* 非线性 Bento 网格：错落列 */
+.kp-bento {
+  display: grid;
+  grid-template-columns: repeat(1, minmax(0, 1fr));
+  gap: 1rem;
+}
+@media (min-width: 640px) {
+  .kp-bento { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (min-width: 1024px) {
+  .kp-bento { grid-template-columns: repeat(12, minmax(0, 1fr)); }
+  .kp-bento > .kp-bento-span-2 { grid-column: span 2 / span 2; }
+  .kp-bento > .kp-bento-span-3 { grid-column: span 3 / span 3; }
+  .kp-bento > .kp-bento-span-4 { grid-column: span 4 / span 4; }
+  .kp-bento > .kp-bento-span-6 { grid-column: span 6 / span 6; }
+  .kp-bento > .kp-bento-span-8 { grid-column: span 8 / span 8; }
+  .kp-bento > .kp-bento-row-2 { grid-row: span 2 / span 2; }
+}
+
+/* 彩虹边框光效 */
+.kp-rainbow-border {
+  position: relative;
+  background: var(--kp-bg-alt);
+  border-radius: var(--radius-lg);
+}
+.kp-rainbow-border::before {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(135deg, var(--kp-brand), var(--kp-accent), var(--kp-brand-light), var(--kp-brand));
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  animation: kp-rainbow-rotate 5s linear infinite;
+  pointer-events: none;
+}
+@keyframes kp-rainbow-rotate {
+  0% { filter: hue-rotate(0deg); }
+  100% { filter: hue-rotate(360deg); }
+}
+
+/* 悬浮指示：小光点跟随 */
+.kp-glow-track {
+  position: relative;
+  overflow: hidden;
+}
+.kp-glow-track::before {
+  content: "";
+  position: absolute;
+  width: 120px;
+  height: 120px;
+  border-radius: 50%;
+  background: radial-gradient(circle, color-mix(in srgb, var(--kp-brand) 40%, transparent), transparent 70%);
+  opacity: 0;
+  transform: translate(-50%, -50%);
+  transition: opacity 0.3s ease;
+  pointer-events: none;
+  left: var(--mouse-x, 50%);
+  top: var(--mouse-y, 50%);
+}
+.kp-glow-track:hover::before {
+  opacity: 0.6;
+}
+
+/* 减弱动效 */
+@media (prefers-reduced-motion: reduce) {
+  .kp-spectrum::before,
+  .kp-fluid-blob,
+  .kp-pulse-ring::after,
+  .kp-shimmer::after,
+  .kp-breathe,
+  .kp-dot-bounce span,
+  .kp-wave-line,
+  .kp-rainbow-border::before,
+  .kp-glow-track::before {
+    animation: none !important;
+  }
+  .kp-tilt:hover { transform: none; }
+}
+
 .kp-force-light,
 .kp-force-light .dark {
-  --kp-bg: #f3f5f2;
-  --kp-bg-alt: #eef1ec;
-  --kp-bg-soft: #e4e9e3;
-  --kp-bg-mute: #d9e0d7;
-  --kp-text: #1c2420;
-  --kp-text-1: #1c2420;
-  --kp-text-2: #4f5c55;
-  --kp-text-3: #7a877f;
-  --kp-brand: #7d917f;
-  --kp-brand-1: #7d917f;
-  --kp-brand-light: #a8b9a6;
-  --kp-brand-dark: #5f7362;
-  --kp-brand-deep: #3a4f40;
-  --kp-brand-darker: #2b3b30;
-  --kp-brand-rgb: 125, 145, 127;
-  --kp-brand-soft: rgba(125, 145, 127, 0.14);
-  --kp-accent: #1f8a7a;
-  --kp-accent-deep: #14685c;
-  --kp-accent-soft: rgba(31, 138, 122, 0.14);
-  --kp-accent-rgb: 31, 138, 122;
-  --kp-ink: #121916;
-  --kp-divider: rgba(90, 110, 98, 0.18);
-  --kp-divider-light: rgba(90, 110, 98, 0.10);
-  --kp-glass-bg: rgba(243, 245, 242, 0.82);
-  --kp-glass-border: rgba(255, 255, 255, 0.22);
+  --kp-bg: #f4f9fd;
+  --kp-bg-alt: #ffffff;
+  --kp-bg-soft: #e8f3fc;
+  --kp-bg-mute: #d6ebf8;
+  --kp-text: #111827;
+  --kp-text-1: #111827;
+  --kp-text-2: #4b5563;
+  --kp-text-3: #6b7280;
+  --kp-brand: #0087eb;
+  --kp-brand-1: #0087eb;
+  --kp-brand-light: #5bb4f5;
+  --kp-brand-dark: #006fbf;
+  --kp-brand-deep: #005a9e;
+  --kp-brand-darker: #0a4a85;
+  --kp-brand-rgb: 0, 135, 235;
+  --kp-brand-soft: rgba(0, 135, 235, 0.12);
+  --kp-accent: #e8a84a;
+  --kp-accent-deep: #c4842e;
+  --kp-accent-soft: rgba(232, 168, 74, 0.16);
+  --kp-accent-rgb: 232, 168, 74;
+  --kp-ink: #0b1220;
+  --kp-glow-peach: #ffe0ae;
+  --kp-glow-blue: #b1e3ff;
+  --kp-divider: rgba(17, 24, 39, 0.10);
+  --kp-divider-light: rgba(17, 24, 39, 0.06);
+  --kp-glass-bg: rgba(255, 255, 255, 0.58);
+  --kp-glass-border: rgba(255, 255, 255, 0.42);
   --background: var(--kp-bg);
   --foreground: var(--kp-text-1);
   --card: var(--kp-bg-alt);
   --card-foreground: var(--kp-text-1);
   --popover: var(--kp-bg-alt);
   --popover-foreground: var(--kp-text-1);
-  --primary: var(--kp-brand-deep);
-  --primary-foreground: oklch(0.985 0 0);
+  --primary: var(--kp-brand);
+  --primary-foreground: #ffffff;
   --secondary: var(--kp-bg-soft);
   --secondary-foreground: var(--kp-text-1);
   --muted: var(--kp-bg-mute);
@@ -1708,10 +2195,10 @@ html.dark .kp-card-dense:hover,
   --ring: var(--kp-brand);
   --sidebar: var(--kp-bg-alt);
   --sidebar-foreground: var(--kp-text-1);
-  --sidebar-primary: var(--kp-brand-dark);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-primary: var(--kp-brand);
+  --sidebar-primary-foreground: #ffffff;
   --sidebar-accent: var(--kp-bg-soft);
-  --sidebar-accent-foreground: var(--kp-brand-dark);
+  --sidebar-accent-foreground: var(--kp-brand-deep);
   --sidebar-border: var(--kp-divider);
   --sidebar-ring: var(--kp-brand);
 }

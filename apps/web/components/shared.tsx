@@ -13,7 +13,7 @@
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import ReactDOM from "react-dom";
 import Link from "next/link";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion, AnimatePresence, useMotionValue, useSpring, useTransform } from "framer-motion";
 import {
   Check,
   ChevronDown,
@@ -35,11 +35,18 @@ import {
   Target,
   Radar,
   Languages,
+  Tags,
+  X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useCardDensity, type CardDensity } from "@/lib/useCardDensity";
 import { Button, buttonVariants } from "./ui/button";
 import { Skeleton } from "./ui/skeleton";
+import {
+  HIGH_VALUE_TAGS,
+  suggestTags,
+  type TagFacet,
+} from "@knowpilot/shared";
 
 /* ═══════════════════════════════════════════════════════
    1. Pagination — 通用分页组件
@@ -63,7 +70,12 @@ export function Pagination({
   if (totalPages <= 1) return null;
 
   return (
-    <div className="flex items-center justify-between px-2 py-4 border-t border-[var(--kp-divider-light)]">
+    <motion.div
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay: 0.1, duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
+      className="flex flex-col items-center justify-between gap-3 px-2 py-4 sm:flex-row border-t border-[var(--kp-divider-light)]"
+    >
       <div className="text-sm text-[var(--kp-text-3)]">
         共 <span className="font-medium text-[var(--kp-text-1)]">{total}</span> 条记录，
         每页 <span className="font-medium text-[var(--kp-text-1)]">{pageSize}</span> 条
@@ -74,11 +86,11 @@ export function Pagination({
           size="icon"
           onClick={() => onPageChange(Math.max(1, page - 1))}
           disabled={page === 1}
-          className="h-8 w-8 rounded-lg border-[var(--kp-divider)] text-[var(--kp-text-2)] hover:text-[var(--kp-text-1)] hover:bg-[var(--kp-bg-soft)]"
+          className="h-8 w-8 rounded-lg border-[var(--kp-divider)] bg-white/40 backdrop-blur-sm text-[var(--kp-text-2)] hover:text-[var(--kp-text-1)] hover:bg-[var(--kp-bg-soft)] transition"
         >
           <ChevronLeft className="h-4 w-4" />
         </Button>
-        
+
         <div className="flex items-center space-x-1">
           {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => {
             if (totalPages > 6 && Math.abs(p - page) > 2 && p !== 1 && p !== totalPages) {
@@ -93,19 +105,21 @@ export function Pagination({
             }
 
             return (
-              <Button
+              <motion.button
                 key={p}
-                variant={p === page ? "default" : "outline"}
-                size="sm"
+                type="button"
+                whileHover={{ scale: 1.08 }}
+                whileTap={{ scale: 0.95 }}
                 onClick={() => onPageChange(p)}
-                className={`h-8 w-8 rounded-lg text-xs ${
+                className={cn(
+                  "h-8 w-8 rounded-lg text-xs font-medium transition",
                   p === page
-                    ? "border border-[var(--kp-brand)] bg-[var(--kp-brand-soft)] text-[var(--kp-brand-deep)] hover:bg-[var(--kp-brand-soft)]"
-                    : "border-[var(--kp-divider)] text-[var(--kp-text-2)] hover:bg-[var(--kp-bg-soft)]"
-                }`}
+                    ? "border border-[var(--kp-brand)] bg-gradient-to-br from-[var(--kp-brand-soft)] to-[var(--kp-brand-soft)] text-[var(--kp-brand-deep)] shadow-sm"
+                    : "border-[var(--kp-divider)] bg-white/40 backdrop-blur-sm text-[var(--kp-text-2)] hover:bg-[var(--kp-bg-soft)]",
+                )}
               >
                 {p}
-              </Button>
+              </motion.button>
             );
           })}
         </div>
@@ -115,12 +129,12 @@ export function Pagination({
           size="icon"
           onClick={() => onPageChange(Math.min(totalPages, page + 1))}
           disabled={page === totalPages}
-          className="h-8 w-8 rounded-lg border-[var(--kp-divider)] text-[var(--kp-text-2)] hover:text-[var(--kp-text-1)] hover:bg-[var(--kp-bg-soft)]"
+          className="h-8 w-8 rounded-lg border-[var(--kp-divider)] bg-white/40 backdrop-blur-sm text-[var(--kp-text-2)] hover:text-[var(--kp-text-1)] hover:bg-[var(--kp-bg-soft)] transition"
         >
           <ChevronRight className="h-4 w-4" />
         </Button>
       </div>
-    </div>
+    </motion.div>
   );
 }
 
@@ -133,22 +147,51 @@ export function EntityCard({
   className,
   children,
   ...props
-}: React.ComponentProps<typeof motion.div> & { density?: CardDensity }) {
+}: {
+  density?: CardDensity;
+  className?: string;
+  children: React.ReactNode;
+} & Omit<React.ComponentProps<typeof motion.div>, "children" | "className" | "density">) {
   const { density: densityFromHook } = useCardDensity();
   const density = densityProp ?? densityFromHook;
+  const ref = useRef<HTMLDivElement>(null);
+  const x = useMotionValue(0.5);
+  const y = useMotionValue(0.5);
+  const rotateX = useSpring(useTransform(y, [0, 1], [6, -6]), { stiffness: 280, damping: 26 });
+  const rotateY = useSpring(useTransform(x, [0, 1], [-6, 6]), { stiffness: 280, damping: 26 });
+
+  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!ref.current) return;
+    const rect = ref.current.getBoundingClientRect();
+    x.set((e.clientX - rect.left) / rect.width);
+    y.set((e.clientY - rect.top) / rect.height);
+  };
+  const handleMouseLeave = () => {
+    x.set(0.5);
+    y.set(0.5);
+  };
+
   return (
     <motion.div
+      ref={ref}
       layout
-      initial={{ opacity: 0, y: 12 }}
-      animate={{ opacity: 1, y: 0 }}
+      initial={{ opacity: 0, y: 14, scale: 0.98 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      transition={{ type: "spring", stiffness: 240, damping: 24 }}
+      onMouseMove={handleMouseMove}
+      onMouseLeave={handleMouseLeave}
+      style={{ rotateX, rotateY, transformStyle: "preserve-3d" }}
+      whileHover={{ scale: 1.015, z: 12 }}
       className={cn(
-        "group relative overflow-hidden rounded-2xl kp-card-premium kp-lift",
+        "kp-card-sheen group relative overflow-hidden rounded-2xl border border-white/60 bg-white/50 backdrop-blur-xl shadow-[0_4px_20px_-8px_rgba(0,135,235,0.14)] transition-shadow hover:shadow-[0_8px_28px_-10px_rgba(0,135,235,0.22)]",
         density === "compact" ? "p-3" : "p-5",
         className,
       )}
       {...props}
     >
-      {children}
+      {/* 顶部渐变高光：常态微光，hover 点亮并横向扩散 */}
+      <div className="absolute inset-x-0 top-0 h-[3px] origin-center scale-x-[0.82] bg-gradient-to-r from-transparent via-[var(--kp-brand)]/40 to-[var(--kp-accent)]/40 opacity-40 transition-all duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] group-hover:scale-x-100 group-hover:opacity-100" />
+      <div className="relative z-10">{children}</div>
     </motion.div>
   );
 }
@@ -190,55 +233,87 @@ export function EmptyState({
   onAction,
 }: EmptyStateProps) {
   return (
-    <div className="flex min-h-[300px] flex-col items-center justify-center rounded-2xl border border-dashed border-[var(--kp-divider)] bg-[color-mix(in_srgb,var(--kp-bg-alt)_88%,var(--kp-brand-soft))] p-8 text-center">
-      <div className="kp-header-icon mb-4 flex h-12 w-12 items-center justify-center rounded-xl">
-        {icon || <Inbox className="h-6 w-6" />}
+    <motion.div
+      initial={{ opacity: 0, y: 20, scale: 0.98 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      transition={{ type: "spring", stiffness: 200, damping: 22 }}
+      className="relative flex min-h-[300px] flex-col items-center justify-center overflow-hidden rounded-3xl border border-white/60 bg-white/45 p-8 text-center shadow-[0_8px_32px_-16px_rgba(0,135,235,0.18)] backdrop-blur-xl"
+    >
+      {/* 流体 blob 装饰 */}
+      <div
+        className="kp-fluid-blob -left-10 -top-10"
+        style={{ width: 140, height: 140, background: "color-mix(in srgb, var(--kp-glow-peach) 45%, transparent)" }}
+      />
+      <div
+        className="kp-fluid-blob -bottom-12 -right-12"
+        style={{ width: 160, height: 160, background: "color-mix(in srgb, var(--kp-glow-blue) 45%, transparent)", animationDelay: "-5s" }}
+      />
+
+      <div className="relative z-10">
+        <div className="kp-header-icon mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl">
+          {icon || <Inbox className="h-7 w-7" />}
+        </div>
+        <h3 className="kp-display-serif mb-1 text-lg text-[var(--kp-text-1)]">{title}</h3>
+        <p className="mx-auto max-w-sm text-sm text-[var(--kp-text-3)]">{description}</p>
+        {onAction && actionLabel && (
+          <Button
+            onClick={onAction}
+            className="mt-6 gap-2 rounded-xl bg-gradient-to-r from-[var(--kp-brand-deep)] to-[var(--kp-brand)] px-5 text-white shadow-lg shadow-[rgba(0,135,235,0.22)] transition hover:opacity-95 hover:shadow-xl"
+          >
+            <Plus className="w-4 h-4" />
+            {actionLabel}
+          </Button>
+        )}
       </div>
-      <h3 className="text-base font-semibold text-[var(--kp-text-1)] mb-1">
-        {title}
-      </h3>
-      <p className="text-sm text-[var(--kp-text-3)] max-w-sm mb-6">
-        {description}
-      </p>
-      {onAction && actionLabel && (
-        <Button
-          onClick={onAction}
-          className="flex items-center gap-2 border border-[var(--kp-brand)] bg-[var(--kp-brand-soft)] text-[var(--kp-brand-deep)] hover:bg-[var(--kp-brand)]/15 transition-all rounded-xl"
-        >
-          <Plus className="w-4 h-4" />
-          {actionLabel}
-        </Button>
-      )}
-    </div>
+    </motion.div>
   );
 }
 
 /* ═══════════════════════════════════════════════════════
-   3. LoadingState — 通用加载骨架屏
+   3. LoadingState — 流体加载骨架屏（Motion Anything）
    ═══════════════════════════════════════════════════════ */
 
 interface LoadingStateProps {
   count?: number;
+  label?: string;
 }
 
-export function LoadingState({ count = 3 }: LoadingStateProps) {
+export function LoadingState({ count = 3, label }: LoadingStateProps) {
   return (
     <div className="space-y-4 w-full">
+      {label && (
+        <div className="flex items-center gap-2 text-sm text-[var(--kp-text-3)]">
+          <span className="kp-dot-bounce">
+            <span />
+            <span />
+            <span />
+          </span>
+          <span>{label}</span>
+        </div>
+      )}
       {Array.from({ length: count }).map((_, idx) => (
-        <div
+        <motion.div
           key={idx}
-          className="kp-card-premium animate-pulse space-y-3 rounded-2xl p-5"
+          initial={{ opacity: 0, y: 14, scale: 0.98 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          transition={{
+            delay: idx * 0.07,
+            duration: 0.45,
+            ease: [0.22, 1, 0.36, 1],
+          }}
+          className="relative overflow-hidden rounded-2xl border border-white/60 bg-white/50 p-5 shadow-[0_4px_20px_-8px_rgba(0,135,235,0.15)] backdrop-blur-xl"
         >
-          <div className="flex items-center justify-between">
+          <div className="kp-shimmer absolute inset-0 opacity-40" />
+          <div className="relative z-10 flex items-center justify-between">
             <Skeleton className="h-5 w-1/4 rounded-lg bg-[var(--kp-bg-mute)]" />
             <Skeleton className="h-4 w-12 rounded-lg bg-[var(--kp-bg-mute)]" />
           </div>
-          <Skeleton className="h-4 w-2/3 rounded-lg bg-[var(--kp-bg-mute)]" />
-          <div className="flex items-center space-x-2 pt-2">
+          <Skeleton className="relative z-10 mt-3 h-4 w-2/3 rounded-lg bg-[var(--kp-bg-mute)]" />
+          <div className="relative z-10 flex items-center space-x-2 pt-3">
             <Skeleton className="h-3 w-16 rounded-md bg-[var(--kp-bg-mute)]" />
             <Skeleton className="h-3 w-20 rounded-md bg-[var(--kp-bg-mute)]" />
           </div>
-        </div>
+        </motion.div>
       ))}
     </div>
   );
@@ -905,7 +980,12 @@ export function PageHeader({
   showDensityToggle?: boolean;
 }) {
   return (
-    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+    <motion.div
+      initial={{ opacity: 0, y: -8, scale: 0.99 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      transition={{ type: "spring", stiffness: 260, damping: 24 }}
+      className="flex flex-col gap-3 rounded-2xl border border-white/50 bg-white/45 px-3 py-3 shadow-[0_8px_28px_-18px_rgba(0,80,160,0.2)] backdrop-blur-xl sm:flex-row sm:items-center sm:justify-between sm:px-4"
+    >
       <div className="flex min-w-0 items-center gap-3">
         {Icon && (
           <span className="kp-header-icon flex h-10 w-10 shrink-0 items-center justify-center rounded-xl">
@@ -940,7 +1020,7 @@ export function PageHeader({
             </Button>
           ))}
       </div>
-    </div>
+    </motion.div>
   );
 }
 
@@ -960,8 +1040,8 @@ export function AdminPage({
   return (
     <div
       className={cn(
-        // 只由 Shell <main> 滚动；此处再 overflow-y-auto = 双滚动条（设计败笔）
-        "kp-admin-surface mx-auto w-full max-w-[1400px] flex-1 space-y-4 overflow-x-hidden px-3 py-4 sm:space-y-5 sm:px-4 sm:py-6 md:px-8 md:py-8",
+        // 只由 Shell <main> 滚动；禁止 flex-1（会锁死高度）+ 禁止本层 overflow-y 裁切
+        "kp-admin-surface kp-spectrum relative mx-auto w-full max-w-[1400px] space-y-4 overflow-x-hidden px-3 py-4 sm:space-y-5 sm:px-4 sm:py-6 md:px-8 md:py-8",
         "[&_.kp-table-scroll]:overflow-x-auto [&_.kp-table-scroll]:overscroll-x-contain",
         className,
       )}
@@ -982,11 +1062,183 @@ export function AdminFormShell({
   return (
     <div
       className={cn(
-        "kp-admin-surface mx-auto w-full max-w-[1400px] flex-1 space-y-5 overflow-x-hidden px-3 py-4 sm:space-y-6 sm:px-4 sm:py-6 md:px-8 md:py-8",
+        "kp-admin-surface kp-spectrum relative mx-auto w-full max-w-[1400px] space-y-5 overflow-x-hidden px-3 py-4 sm:space-y-6 sm:px-4 sm:py-6 md:px-8 md:py-8",
         className,
       )}
     >
       {children}
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════
+   标签筛选条 / 标签输入（统一 tags 约定）
+   ═══════════════════════════════════════════════════════ */
+
+export function TagFilterBar({
+  facets,
+  value,
+  onChange,
+  className,
+  emptyHint = "暂无标签",
+}: {
+  facets: TagFacet[];
+  value: string | null;
+  onChange: (tag: string | null) => void;
+  className?: string;
+  emptyHint?: string;
+}) {
+  const chips =
+    facets.length > 0
+      ? facets
+      : HIGH_VALUE_TAGS.map((tag) => ({ tag, count: 0, highValue: true }));
+
+  return (
+    <div className={cn("flex flex-wrap items-center gap-1.5", className)}>
+      <span className="mr-1 inline-flex items-center gap-1 text-[10px] font-medium text-[var(--kp-text-3)]">
+        <Tags className="h-3 w-3" />
+        标签
+      </span>
+      <button
+        type="button"
+        onClick={() => onChange(null)}
+        className={cn(
+          "rounded-full px-2.5 py-0.5 text-[10px] font-medium transition backdrop-blur-sm",
+          !value
+            ? "bg-gradient-to-r from-[var(--kp-brand-deep)] to-[var(--kp-brand)] text-white shadow-sm"
+            : "border border-white/40 bg-white/40 text-[var(--kp-text-3)] hover:bg-white/60",
+        )}
+      >
+        全部
+      </button>
+      {chips.length === 0 ? (
+        <span className="text-[10px] text-[var(--kp-text-3)]">{emptyHint}</span>
+      ) : (
+        chips.slice(0, 24).map((f) => {
+          const active = value === f.tag;
+          return (
+            <button
+              key={f.tag}
+              type="button"
+              onClick={() => onChange(active ? null : f.tag)}
+              className={cn(
+                "rounded-full px-2.5 py-0.5 text-[10px] font-medium transition backdrop-blur-sm",
+                active
+                  ? "bg-gradient-to-r from-[var(--kp-brand-deep)] to-[var(--kp-brand)] text-white shadow-sm"
+                  : f.highValue
+                    ? "border border-amber-500/20 bg-amber-500/10 text-amber-700 hover:bg-amber-500/20 dark:text-amber-400"
+                    : "border border-white/40 bg-white/40 text-[var(--kp-text-2)] hover:bg-white/60",
+              )}
+            >
+              {f.tag}
+              {f.count > 0 ? (
+                <span className="ml-1 opacity-70">{f.count}</span>
+              ) : null}
+            </button>
+          );
+        })
+      )}
+      {value && (
+        <button
+          type="button"
+          onClick={() => onChange(null)}
+          className="inline-flex items-center gap-0.5 rounded-full px-2 py-0.5 text-[10px] text-[var(--kp-text-3)] hover:text-[var(--kp-text-1)]"
+          title="清除筛选"
+        >
+          <X className="h-3 w-3" />
+          清除
+        </button>
+      )}
+    </div>
+  );
+}
+
+export function TagInputField({
+  value,
+  onChange,
+  corpus = [],
+  placeholder = "非常有用, 必装, …",
+  hint,
+  className,
+}: {
+  value: string[];
+  onChange: (tags: string[]) => void;
+  corpus?: string[];
+  placeholder?: string;
+  hint?: string;
+  className?: string;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState("");
+  const display = editing ? draft : value.join(", ");
+  const suggestions = suggestTags(
+    (editing ? draft : "").split(/[,，]/).pop()?.trim() ?? "",
+    value,
+    corpus,
+  );
+
+  const commit = (raw: string) => {
+    const next = raw
+      .split(/[,，\n]+/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+    onChange(next);
+    setDraft(next.join(", "));
+  };
+
+  return (
+    <div className={cn("space-y-1.5", className)}>
+      <div className="relative">
+        <input
+          value={display}
+          onChange={(e) => {
+            if (!editing) setEditing(true);
+            setDraft(e.target.value);
+          }}
+          onFocus={() => {
+            setEditing(true);
+            setDraft(value.join(", "));
+          }}
+          onBlur={() => {
+            commit(draft);
+            window.setTimeout(() => setEditing(false), 150);
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              commit(draft);
+            }
+          }}
+          placeholder={placeholder}
+          className="w-full rounded-xl border border-[var(--kp-divider)] bg-[var(--kp-bg)] px-3 py-2 text-sm outline-none focus:border-[var(--kp-brand-deep)]"
+        />
+        {editing && suggestions.length > 0 && (
+          <div className="absolute z-20 mt-1 max-h-40 w-full overflow-auto rounded-xl border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)] p-1 shadow-lg">
+            {suggestions.map((tag) => (
+              <button
+                key={tag}
+                type="button"
+                className="flex w-full items-center rounded-lg px-2 py-1.5 text-left text-xs text-[var(--kp-text-2)] hover:bg-[var(--kp-brand-soft)]"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => {
+                  const base = draft
+                    .split(/[,，\n]+/)
+                    .map((s) => s.trim())
+                    .filter(Boolean);
+                  base.pop();
+                  const next = [...base, tag];
+                  onChange(next);
+                  setDraft(`${next.join(", ")}, `);
+                  setEditing(true);
+                }}
+              >
+                {tag}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+      {hint && <p className="text-[10px] text-[var(--kp-text-3)]">{hint}</p>}
     </div>
   );
 }

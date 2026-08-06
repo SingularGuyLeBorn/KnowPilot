@@ -16,6 +16,7 @@ const FALLBACK_PROFILE: AboutProfile = {
   tagline: "写代码不是目的，做出东西才是。",
   oneLiner: "正在造一个本地优先的 AI 数字花园。",
   location: "",
+  mbti: "ENTJ",
   github: "https://github.com/SingularGuyLeBorn",
   site: "",
   email: "",

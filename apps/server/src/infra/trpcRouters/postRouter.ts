@@ -6,7 +6,8 @@ import { z } from "zod";
 import {
   createPostSchema, updatePostSchema, listPostsSchema, searchPostsSchema, relatedPostsSchema,
   createPostFromChatSchema, getPostBySlugSchema, postGardenSchema, postRecordViewSchema, explainSelectionSchema,
-  deleteByIdSchema, deleteByIdWithApprovalSchema,
+  deleteByIdSchema, deleteByIdWithApprovalSchema, postActivityCalendarSchema,
+  postActivityDayDetailSchema,
 } from "@knowpilot/shared";
 import { router, publicProcedure } from "../../trpc/trpc.js";
 import { withApprovalGuard } from "./withApprovalGuard.js";
@@ -44,6 +45,20 @@ export const postRouter = router({
     .mutation(({ ctx, input }) => ctx.services.post.createFromChat(input)),
   categories: publicProcedure.meta({ description: "获取所有已发布文章的分类列表。", aiReadable: true }).query(({ ctx }) => ctx.services.post.categories()),
   tags: publicProcedure.meta({ description: "获取所有已发布文章的标签列表。", aiReadable: true }).query(({ ctx }) => ctx.services.post.tags()),
+  activityCalendar: publicProcedure
+    .meta({
+      description: "文章更新热力日历：按 updatedAt 按日聚合，供首页 GitHub 风格贡献图。",
+      aiReadable: true,
+    })
+    .input(postActivityCalendarSchema)
+    .query(({ ctx, input }) => ctx.services.post.activityCalendar(input)),
+  activityDayDetail: publicProcedure
+    .meta({
+      description: "日历某日详情：新增/更新/删除文章 + 当日 LLM token 消耗。",
+      aiReadable: true,
+    })
+    .input(postActivityDayDetailSchema)
+    .query(({ ctx, input }) => ctx.services.post.activityDayDetail(input)),
   explainSelection: publicProcedure
     .meta({
       description: "阅读页划线解释：对用户划选原文做一次 LLM 解释（不建会话、不写回文章）。",

@@ -4,6 +4,7 @@ title: 粗鄙 · 偏颇 · 还有点梦想
 tagline: 以前跟煤炭钢铁打交道，后来被大模型吞没了初级程序员的骄傲——于是改学怎么跟 AI 协作，做出东西才是目的。
 oneLiner: 正在造一个本地优先的 AI 数字花园，也相信 Agent 应该是可控、可观测的系统。
 location: 浙江
+mbti: ENTJ
 github: https://github.com/SingularGuyLeBorn
 site: https://github.com/SingularGuyLeBorn
 email: ""

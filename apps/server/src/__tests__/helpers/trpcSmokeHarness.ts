@@ -69,6 +69,8 @@ const SMOKE_ARG_OVERRIDES: Record<string, unknown> = {
   "garden.update": { id: "posts", title: "博客" },
   "garden.delete": { id: "__smoke_nonexistent_garden__" },
   "post.list": { page: 1, pageSize: 1 },
+  "post.activityCalendar": { weeks: 4, publishedOnly: true },
+  "post.activityDayDetail": { date: "2026-01-01", publishedOnly: true },
   "post.search": { query: "smoke", limit: 3 },
   "post.related": { id: FAKE_CUID, limit: 5 },
   "llm.listLocalModels": { timeoutMs: 500 },

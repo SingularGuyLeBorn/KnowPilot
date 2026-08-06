@@ -13,7 +13,14 @@ import type {
   OperationResult,
   NextStep,
 } from "@knowpilot/shared";
-import { DEFAULT_POST_GARDEN, isValidGardenIdFormat, isReservedContentDir } from "@knowpilot/shared";
+import {
+  DEFAULT_POST_GARDEN,
+  isValidGardenIdFormat,
+  isReservedContentDir,
+  canonicalListTag,
+  formatTagsCsv,
+  tagsFromCsv,
+} from "@knowpilot/shared";
 import { TRPCError } from "@trpc/server";
 import matter from "gray-matter";
 import {
@@ -47,6 +54,37 @@ export interface PostEntity {
   updatedAt: Date;
 }
 
+function startOfLocalDay(d: Date): Date {
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+}
+
+function addLocalDays(d: Date, n: number): Date {
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate() + n);
+}
+
+/** 本地日历日 YYYY-MM-DD（不用 toISOString，避免 UTC 错日） */
+function toLocalDateKey(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+function parseLocalDateKey(key: string): Date {
+  const [y, m, d] = key.split("-").map(Number);
+  return new Date(y, (m || 1) - 1, d || 1);
+}
+
+function parseTokenUsage(raw: unknown): { prompt: number; completion: number; total: number } | null {
+  if (!raw || typeof raw !== "object") return null;
+  const o = raw as Record<string, unknown>;
+  const prompt = Number(o.prompt) || 0;
+  const completion = Number(o.completion) || 0;
+  const total = Number(o.total) || prompt + completion;
+  if (total <= 0 && prompt <= 0 && completion <= 0) return null;
+  return { prompt, completion, total };
+}
+
 export class PostService extends FileSyncService<CreatePostInput, UpdatePostInput, ListPostsInput, PostEntity> {
   readonly entityName = "post";
   /** 默认花园目录名；实际读写走 getGardenDir(entity.garden) */
@@ -60,7 +98,7 @@ export class PostService extends FileSyncService<CreatePostInput, UpdatePostInpu
     return {
       ...raw,
       garden,
-      tags: raw.tags ? raw.tags.split(",").filter(Boolean).map((t: string) => t.trim()) : [],
+      tags: tagsFromCsv(raw.tags),
     };
   }
 
@@ -133,7 +171,8 @@ export class PostService extends FileSyncService<CreatePostInput, UpdatePostInpu
     if (input.garden) where.garden = input.garden;
     if (input.published !== undefined) where.published = input.published;
     if (input.category) where.category = input.category;
-    if (input.tag) where.tags = { contains: input.tag };
+    const tag = canonicalListTag(input.tag);
+    if (tag) where.tags = { contains: tag };
     // R13：FTS 命中时按 id 过滤；否则回退 LIKE
     if ((input as any).ftsIds) {
       where.id = { in: (input as any).ftsIds };
@@ -157,7 +196,7 @@ export class PostService extends FileSyncService<CreatePostInput, UpdatePostInpu
       excerpt: input.excerpt,
       coverImage: input.coverImage,
       category: input.category,
-      tags: input.tags?.join(",") || "",
+      tags: formatTagsCsv(input.tags),
     };
   }
 
@@ -170,7 +209,7 @@ export class PostService extends FileSyncService<CreatePostInput, UpdatePostInpu
     if (typeof updateData.content === "string") {
       updateData.content = stripLeadingMarkdownFrontmatter(updateData.content);
     }
-    if (tags !== undefined) updateData.tags = tags.join(",");
+    if (tags !== undefined) updateData.tags = formatTagsCsv(tags);
     return updateData;
   }
 
@@ -437,6 +476,168 @@ export class PostService extends FileSyncService<CreatePostInput, UpdatePostInpu
       }
     }
     return Array.from(tagSet).sort((a, b) => a.localeCompare(b, "zh-CN"));
+  }
+
+  /**
+   * GitHub 风格文章更新热力：按 updatedAt 本地日聚合 count。
+   * 只 select 时间戳，不拉正文。
+   */
+  async activityCalendar(input: {
+    weeks?: number;
+    publishedOnly?: boolean;
+    garden?: string;
+  }): Promise<{
+    days: Array<{ date: string; count: number }>;
+    totalUpdates: number;
+    activeDays: number;
+    startDate: string;
+    endDate: string;
+  }> {
+    const weeks = input.weeks ?? 53;
+    const publishedOnly = input.publishedOnly !== false;
+
+    const end = startOfLocalDay(new Date());
+    const start = addLocalDays(end, -(weeks * 7 - 1));
+    // 对齐到周日（与 GitHub 一致：列首为周日）
+    const gridStart = addLocalDays(start, -start.getDay());
+
+    const rows = await this.prisma.post.findMany({
+      where: {
+        deletedAt: null,
+        ...(publishedOnly ? { published: true } : {}),
+        ...(input.garden ? { garden: input.garden } : {}),
+        updatedAt: { gte: gridStart },
+      },
+      select: { updatedAt: true },
+    });
+
+    const countByDate = new Map<string, number>();
+    for (const row of rows) {
+      const key = toLocalDateKey(row.updatedAt);
+      countByDate.set(key, (countByDate.get(key) ?? 0) + 1);
+    }
+
+    const days: Array<{ date: string; count: number }> = [];
+    let totalUpdates = 0;
+    let activeDays = 0;
+    const gridEnd = end;
+    for (let d = new Date(gridStart); d.getTime() <= gridEnd.getTime(); d = addLocalDays(d, 1)) {
+      const date = toLocalDateKey(d);
+      const count = countByDate.get(date) ?? 0;
+      days.push({ date, count });
+      totalUpdates += count;
+      if (count > 0) activeDays += 1;
+    }
+
+    return {
+      days,
+      totalUpdates,
+      activeDays,
+      startDate: toLocalDateKey(gridStart),
+      endDate: toLocalDateKey(gridEnd),
+    };
+  }
+
+  /**
+   * 日历某日详情：新增 / 更新 / 删除文章列表 + 当日 LLM token 汇总。
+   */
+  async activityDayDetail(input: {
+    date: string;
+    publishedOnly?: boolean;
+    garden?: string;
+  }): Promise<{
+    date: string;
+    created: Array<{ id: string; garden: string; slug: string; title: string }>;
+    updated: Array<{ id: string; garden: string; slug: string; title: string }>;
+    deleted: Array<{ id: string; garden: string; slug: string; title: string }>;
+    tokens: {
+      total: number;
+      prompt: number;
+      completion: number;
+      runCount: number;
+      messageCount: number;
+    };
+  }> {
+    const publishedOnly = input.publishedOnly !== false;
+    const dayStart = parseLocalDateKey(input.date);
+    const dayEnd = addLocalDays(dayStart, 1);
+
+    const gardenFilter = input.garden ? { garden: input.garden } : {};
+    const publishedFilter = publishedOnly ? { published: true } : {};
+
+    const [createdRows, touchedRows, deletedRows, runs, messages] = await Promise.all([
+      this.prisma.post.findMany({
+        where: {
+          deletedAt: null,
+          ...publishedFilter,
+          ...gardenFilter,
+          createdAt: { gte: dayStart, lt: dayEnd },
+        },
+        select: { id: true, garden: true, slug: true, title: true },
+        orderBy: { createdAt: "desc" },
+        take: 40,
+      }),
+      this.prisma.post.findMany({
+        where: {
+          deletedAt: null,
+          ...publishedFilter,
+          ...gardenFilter,
+          updatedAt: { gte: dayStart, lt: dayEnd },
+          NOT: { createdAt: { gte: dayStart, lt: dayEnd } },
+        },
+        select: { id: true, garden: true, slug: true, title: true },
+        orderBy: { updatedAt: "desc" },
+        take: 40,
+      }),
+      this.prisma.post.findMany({
+        where: {
+          ...gardenFilter,
+          deletedAt: { gte: dayStart, lt: dayEnd },
+        },
+        select: { id: true, garden: true, slug: true, title: true },
+        orderBy: { deletedAt: "desc" },
+        take: 40,
+      }),
+      this.prisma.run.findMany({
+        where: { createdAt: { gte: dayStart, lt: dayEnd } },
+        select: { tokenUsage: true },
+        take: 500,
+      }),
+      this.prisma.chatMessage.findMany({
+        where: { createdAt: { gte: dayStart, lt: dayEnd } },
+        select: { tokenUsage: true },
+        take: 500,
+      }),
+    ]);
+
+    const tokens = { total: 0, prompt: 0, completion: 0, runCount: 0, messageCount: 0 };
+    for (const row of runs) {
+      const u = parseTokenUsage(row.tokenUsage);
+      if (!u) continue;
+      tokens.runCount += 1;
+      tokens.total += u.total;
+      tokens.prompt += u.prompt;
+      tokens.completion += u.completion;
+    }
+    for (const row of messages) {
+      const u = parseTokenUsage(row.tokenUsage);
+      if (!u) continue;
+      tokens.messageCount += 1;
+      // Run 已覆盖主路径时避免双重计数：仅当当日无 Run 落库时用消息侧补
+      if (tokens.runCount === 0) {
+        tokens.total += u.total;
+        tokens.prompt += u.prompt;
+        tokens.completion += u.completion;
+      }
+    }
+
+    return {
+      date: input.date,
+      created: createdRows,
+      updated: touchedRows,
+      deleted: deletedRows,
+      tokens,
+    };
   }
 
   /**

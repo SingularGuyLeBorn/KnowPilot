@@ -12,6 +12,7 @@ import Link from "next/link";
 import { BookPlus, Loader2, X } from "lucide-react";
 import { DEFAULT_POST_GARDEN } from "@knowpilot/shared";
 import { trpc } from "@/lib/trpc";
+import { formatGardenId } from "@/lib/gardenDisplay";
 import { postDetailHref } from "@/lib/postHref";
 import { cn } from "@/lib/utils";
 import { buttonVariants } from "@/components/ui/button";
@@ -205,7 +206,7 @@ function SaveMessageAsPostDialogInner({
               >
                 {(gardens?.items ?? [{ id: DEFAULT_POST_GARDEN, title: "博客" }]).map((g) => (
                   <option key={g.id} value={g.id}>
-                    {g.title} ({g.id})
+                    {g.title} ({formatGardenId(g.id)})
                   </option>
                 ))}
               </select>

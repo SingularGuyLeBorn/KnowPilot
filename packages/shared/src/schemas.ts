@@ -146,6 +146,23 @@ export const listPostsSchema = z.object({
   order: z.enum(["asc", "desc"]).default("desc"),
 });
 
+/** 文章更新热力日历（GitHub contribution 风格）：按 updatedAt 日聚合 */
+export const postActivityCalendarSchema = z.object({
+  /** 回溯周数（含本周），默认 53 ≈ 一年 */
+  weeks: z.number().int().min(4).max(53).default(53),
+  /** 默认只统计已发布；false = 含草稿 */
+  publishedOnly: z.boolean().default(true),
+  garden: gardenIdSchema.optional(),
+});
+
+/** 点击日历某日：该日新增 / 更新 / 删除 + token 消耗 */
+export const postActivityDayDetailSchema = z.object({
+  /** 本地日 YYYY-MM-DD */
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "date 须为 YYYY-MM-DD"),
+  publishedOnly: z.boolean().default(true),
+  garden: gardenIdSchema.optional(),
+});
+
 export const searchPostsSchema = z.object({
   query: z.string().min(1),
   limit: z.number().int().min(1).max(50).default(10),
@@ -307,12 +324,15 @@ export const heartbeatConfigSchema = z.object({
   decision: heartbeatDecisionStateSchema.optional(),
 });
 
+export const agentPermissionModeSchema = z.enum(["default", "unattended", "explore"]);
+
 export const createAgentSchema = z.object({
   name: safeEntityNameSchema,
   description: z.string().optional(),
   model: z.string().default(LLM_MODEL_IDS.DEEPSEEK_CHAT),
   systemPrompt: z.string().default(""),
   tools: z.array(z.string()).default([]),
+  permissionMode: agentPermissionModeSchema.nullish(),
   // Swarm 层级（不传则 service 层默认 "sub"）
   tier: agentTierSchema.optional(),
   workspaceId: z.string().cuid().optional(),
@@ -329,6 +349,7 @@ export const updateAgentSchema = z.object({
   model: z.string().optional(),
   systemPrompt: z.string().optional(),
   tools: z.array(z.string()).optional(),
+  permissionMode: agentPermissionModeSchema.nullish(),
   // Swarm
   tier: agentTierSchema.optional(),
   workspaceId: z.string().cuid().nullable().optional(),
@@ -525,6 +546,7 @@ export const createSkillSchema = z.object({
   icon: z.string().optional(),
   trigger: z.string().optional(),
   enabled: z.boolean().default(true),
+  tags: z.array(z.string().max(40)).max(20).default([]),
   metaJson: z.string().optional(),
 });
 
@@ -536,6 +558,7 @@ export const updateSkillSchema = z.object({
   icon: z.string().optional(),
   trigger: z.string().optional(),
   enabled: z.boolean().optional(),
+  tags: z.array(z.string().max(40)).max(20).optional(),
   metaJson: z.string().optional(),
 });
 
@@ -543,6 +566,8 @@ export const listSkillsSchema = z.object({
   page: z.number().int().min(1).default(1),
   pageSize: z.number().int().min(1).max(100).default(20),
   keyword: z.string().optional(),
+  /** 按统一标签筛选（contains，如「非常有用」） */
+  tag: z.string().max(40).optional(),
   enabled: z.boolean().optional(),
 });
 
@@ -997,6 +1022,8 @@ export const createMemorySchema = z.object({
   type: memoryUserTypeSchema.default("note"),
   strength: z.number().min(0).max(1).default(MEMORY_INITIAL_STRENGTH),
   keywords: z.array(z.string()).default([]),
+  /** 组织标签（与 Skill/Post 统一；keywords 仍专用于检索） */
+  tags: z.array(z.string().max(40)).max(20).default([]),
   /** 事实来源归因（可选；Agent 工具 / flush 会写入） */
   attribution: memoryAttributionSchema.optional(),
   /** 作用域：global / workspace:{id} / agent:{id}；UI 创建默认 global */
@@ -1011,6 +1038,7 @@ export const updateMemorySchema = z.object({
   type: memoryUserTypeSchema.optional(),
   strength: z.number().min(0).max(1).optional(),
   keywords: z.array(z.string()).optional(),
+  tags: z.array(z.string().max(40)).max(20).optional(),
   attribution: memoryAttributionSchema.optional(),
   scope: z.string().max(120).optional(),
   validFrom: z.coerce.date().optional().nullable(),
@@ -1024,6 +1052,7 @@ export const listMemoriesSchema = z.object({
   keyword: z.string().optional(),
   type: z.string().optional(),
   scope: z.string().optional(),
+  tag: z.string().max(40).optional(),
   status: memoryStatusSchema.optional(),
 });
 
@@ -1459,6 +1488,8 @@ export const updateApprovalSchema = z.object({
   id: z.string().cuid(),
   status: z.enum(["pending", "approved", "rejected", "executed"]),
   decisionNote: z.string().optional(),
+  /** 批准时勾选：以后同 scope 自动放行 */
+  rememberScope: z.boolean().optional(),
 });
 
 export const listApprovalsSchema = z.object({
@@ -1627,6 +1658,8 @@ export const runTaskSchema = z.object({
 
 export const executeApprovalSchema = z.object({
   id: z.string().cuid(),
+  /** 批准时勾选：以后同 scope 自动放行（仅 approveAndExecute 路径消费） */
+  rememberScope: z.boolean().optional(),
 });
 
 export const approveAndExecuteApprovalSchema = executeApprovalSchema;
@@ -1635,7 +1668,10 @@ export const approveAndExecuteApprovalSchema = executeApprovalSchema;
 export const approvalIdsBatchSchema = z.object({
   ids: z.array(z.string().cuid()).min(1).max(50),
 });
-export const approveAndExecuteBatchSchema = approvalIdsBatchSchema;
+export const approveAndExecuteBatchSchema = approvalIdsBatchSchema.extend({
+  /** 批量时按卡片勾选：需要记住 scope 的 approvalId 列表 */
+  rememberScopeIds: z.array(z.string().cuid()).optional(),
+});
 export const rejectApprovalsBatchSchema = approvalIdsBatchSchema;
 
 export const workflowStepSchema = z.object({
@@ -1654,6 +1690,27 @@ export const globalSearchSchema = z.object({
     .array(z.enum(["post", "agent", "skill", "memory", "task", "mcp", "message"]))
     .optional(),
   limit: z.number().int().min(1).max(50).default(20),
+});
+
+/** 跨实体标签 facets / 浏览（Post/Skill/Memory/Prompt/InfoSource/Inbox） */
+export const tagEntityKindSchema = z.enum([
+  "post",
+  "skill",
+  "memory",
+  "prompt",
+  "infoSource",
+  "inbox",
+]);
+
+export const tagFacetsSchema = z.object({
+  entities: z.array(tagEntityKindSchema).optional(),
+  limit: z.number().int().min(1).max(200).default(80),
+});
+
+export const browseByTagSchema = z.object({
+  tag: z.string().min(1).max(40),
+  entities: z.array(tagEntityKindSchema).optional(),
+  limit: z.number().int().min(1).max(100).default(40),
 });
 
 export const analyticsDashboardSchema = z.object({
@@ -1690,6 +1747,8 @@ export type UpdateGardenInput = z.infer<typeof updateGardenSchema>;
 /** list 入参经 zod default 后 page/pageSize 必有 */
 export type ListGardensInput = z.infer<typeof listGardensSchema>;
 export type ListPostsInput = z.infer<typeof listPostsSchema>;
+export type PostActivityCalendarInput = z.infer<typeof postActivityCalendarSchema>;
+export type PostActivityDayDetailInput = z.infer<typeof postActivityDayDetailSchema>;
 export type SearchPostsInput = z.infer<typeof searchPostsSchema>;
 export type RelatedPostsInput = z.infer<typeof relatedPostsSchema>;
 export type CreatePostFromChatInput = z.infer<typeof createPostFromChatSchema>;
@@ -1713,6 +1772,8 @@ export type RunTaskInput = z.infer<typeof runTaskSchema>;
 export type ExecuteApprovalInput = z.infer<typeof executeApprovalSchema>;
 export type RunWorkflowInput = z.infer<typeof runWorkflowSchema>;
 export type GlobalSearchInput = z.infer<typeof globalSearchSchema>;
+export type TagFacetsInput = z.infer<typeof tagFacetsSchema>;
+export type BrowseByTagInput = z.infer<typeof browseByTagSchema>;
 export type AnalyticsDashboardInput = z.infer<typeof analyticsDashboardSchema>;
 export type AuthLoginInput = z.infer<typeof authLoginSchema>;
 

@@ -11,6 +11,7 @@ import { cn } from "@/lib/utils";
 import { ConfirmDialog, EmptyState, LoadingState } from "@/components/shared";
 import { ContinueReadingCard } from "@/components/post/ContinueReading";
 import { SEED_GARDENS } from "@knowpilot/shared";
+import { formatGardenId } from "@/lib/gardenDisplay";
 import { postDetailHref } from "@/lib/postHref";
 
 const spring = { type: "spring" as const, stiffness: 260, damping: 26 };
@@ -64,7 +65,7 @@ export default function GardensPage() {
 
   return (
     <div className="relative w-full overflow-x-hidden">
-      {/* 氛围层：莫兰迪柔光，不对齐工程灰底 */}
+      {/* 氛围层：晴空玻璃柔光 */}
       <div
         aria-hidden
         className="pointer-events-none absolute inset-0 -z-10"
@@ -97,13 +98,14 @@ export default function GardensPage() {
             initial={{ opacity: 0, scale: 0.92 }}
             animate={{ opacity: 1, scale: 1 }}
             transition={{ ...spring, delay: 0.05 }}
-            className="mb-4 inline-flex items-center gap-2 rounded-full border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)]/80 px-3 py-1 text-xs font-medium text-[var(--kp-text-2)] backdrop-blur-sm"
+            className="mb-4 inline-flex items-center gap-2 rounded-full border border-white/60 bg-white/55 px-3.5 py-1.5 text-xs font-medium text-[var(--kp-text-2)] shadow-sm backdrop-blur-md"
           >
             <Layers className="h-3.5 w-3.5 text-[var(--kp-brand)]" />
             数字花园
           </motion.div>
           <h1 className="text-4xl font-bold tracking-tight text-[var(--kp-text-1)] md:text-5xl">
-            知识库
+            知识库{" "}
+            <span className="text-[var(--kp-brand)]">{"{ Gardens }"}</span>
           </h1>
           <p className="mx-auto mt-3 max-w-xl text-base text-[var(--kp-text-2)] md:text-lg">
             一座库，一个首页，一棵文章树。先选库，再读写。
@@ -114,7 +116,7 @@ export default function GardensPage() {
               initial={{ opacity: 0, y: 8 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ ...spring, delay: 0.12 }}
-              className="inline-flex items-center gap-2 rounded-full border border-[var(--kp-divider)] bg-[var(--kp-bg)]/70 px-3.5 py-1.5 text-xs text-[var(--kp-text-2)] backdrop-blur-sm"
+              className="inline-flex items-center gap-2 rounded-full border border-white/60 bg-white/55 px-3.5 py-1.5 text-xs text-[var(--kp-text-2)] shadow-sm backdrop-blur-md"
             >
               <span className="kp-stat-number text-sm font-semibold text-[var(--kp-text-1)]">
                 {items.length}
@@ -125,7 +127,7 @@ export default function GardensPage() {
               initial={{ opacity: 0, y: 8 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ ...spring, delay: 0.18 }}
-              className="inline-flex items-center gap-2 rounded-full border border-[var(--kp-divider)] bg-[var(--kp-bg)]/70 px-3.5 py-1.5 text-xs text-[var(--kp-text-2)] backdrop-blur-sm"
+              className="inline-flex items-center gap-2 rounded-full border border-white/60 bg-white/55 px-3.5 py-1.5 text-xs text-[var(--kp-text-2)] shadow-sm backdrop-blur-md"
             >
               <FileText className="h-3.5 w-3.5 text-[var(--kp-brand)]" />
               <span className="kp-stat-number text-sm font-semibold text-[var(--kp-text-1)]">
@@ -141,7 +143,7 @@ export default function GardensPage() {
               whileHover={{ scale: 1.03 }}
               whileTap={{ scale: 0.98 }}
               onClick={() => setOpen(true)}
-              className={cn(buttonVariants(), "inline-flex items-center gap-2 rounded-full px-4")}
+              className="inline-flex items-center gap-2 rounded-full bg-[var(--kp-brand)] px-4 py-2 text-sm font-semibold text-white shadow-[0_8px_22px_-8px_rgba(0,135,235,0.5)] transition hover:-translate-y-0.5 hover:bg-[var(--kp-brand-dark)]"
             >
               <Plus className="h-4 w-4" />
               新建知识库
@@ -160,7 +162,7 @@ export default function GardensPage() {
               transition={{ duration: 0.35, ease: easeOut }}
               className="mb-10 overflow-hidden"
             >
-              <div className="rounded-3xl border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)]/90 p-5 shadow-sm backdrop-blur-md kp-card-premium sm:p-6">
+              <div className="rounded-[1.75rem] border border-white/55 bg-white/60 p-5 shadow-[0_16px_48px_-20px_rgba(0,80,160,0.2)] backdrop-blur-xl sm:p-6">
                 <h2 className="mb-4 text-sm font-semibold text-[var(--kp-text-1)]">新建知识库</h2>
                 <div className="grid gap-3 sm:grid-cols-2">
                   <Input
@@ -232,58 +234,60 @@ export default function GardensPage() {
                   initial={{ opacity: 0, y: 28 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ duration: 0.55, delay: 0.08 + index * 0.08, ease: easeOut }}
-                  whileHover={{ y: -6 }}
-                  className="group relative flex flex-col overflow-hidden rounded-3xl border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)]/85 p-6 shadow-sm backdrop-blur-sm kp-card-premium transition-[border-color,box-shadow,background-color] duration-500 hover:border-[var(--kp-brand)]/40 hover:bg-[var(--kp-bg-alt)] hover:shadow-[0_12px_40px_-12px_color-mix(in_srgb,var(--kp-brand)_35%,transparent)]"
+                  whileHover={{ y: -8 }}
+                  className="group relative flex flex-col overflow-hidden rounded-[1.75rem] border border-white/55 bg-white/55 p-6 shadow-[0_16px_48px_-20px_rgba(0,80,160,0.22)] backdrop-blur-xl transition-[border-color,box-shadow,background-color] duration-500 hover:border-[var(--kp-brand)]/35 hover:bg-white/75 hover:shadow-[0_22px_56px_-18px_rgba(0,135,235,0.32)]"
                 >
                   <div
                     aria-hidden
-                    className="absolute inset-x-0 top-0 h-1 origin-left scale-x-[0.45] bg-gradient-to-r from-[var(--kp-brand)] via-[var(--kp-brand-light,var(--kp-brand))] to-transparent opacity-60 transition-all duration-500 group-hover:scale-x-100 group-hover:opacity-100"
+                    className="pointer-events-none absolute -right-10 -top-12 h-36 w-36 rounded-full bg-[var(--kp-glow-peach)]/0 blur-3xl transition-all duration-500 group-hover:bg-[var(--kp-glow-peach)]/45"
                   />
                   <div
                     aria-hidden
-                    className="pointer-events-none absolute -right-8 -top-8 h-28 w-28 rounded-full bg-[var(--kp-brand)]/0 blur-2xl transition-all duration-500 group-hover:bg-[var(--kp-brand)]/15"
+                    className="pointer-events-none absolute -bottom-10 -left-8 h-32 w-32 rounded-full bg-[var(--kp-glow-blue)]/0 blur-3xl transition-all duration-500 group-hover:bg-[var(--kp-glow-blue)]/50"
                   />
 
                   <div className="relative mb-4 flex items-start justify-between gap-3">
                     <div className="min-w-0">
-                      <div className="flex items-baseline gap-2">
-                        <span className="font-mono text-[11px] text-[var(--kp-text-3)] transition-colors group-hover:text-[var(--kp-brand)]">
+                      <div className="mb-2 flex flex-wrap items-center gap-2">
+                        <span className="inline-flex items-center rounded-full border border-white/70 bg-white/70 px-2.5 py-0.5 font-mono text-[10px] font-medium text-[var(--kp-brand)] shadow-sm">
                           {String(index + 1).padStart(2, "0")}
                         </span>
-                        <Link
-                          href={homeHref}
-                          className="truncate text-xl font-semibold tracking-tight text-[var(--kp-text-1)] transition-colors group-hover:text-[var(--kp-brand-deep)]"
-                        >
-                          {g.title}
-                        </Link>
+                        <span className="inline-flex items-center rounded-full border border-white/60 bg-white/50 px-2.5 py-0.5 font-mono text-[10px] text-[var(--kp-text-3)]">
+                          {formatGardenId(g.id)}
+                        </span>
                       </div>
-                      <p className="mt-0.5 font-mono text-xs text-[var(--kp-text-3)]">{g.id}</p>
+                      <Link
+                        href={homeHref}
+                        className="block truncate text-xl font-semibold tracking-tight text-[var(--kp-text-1)] transition-colors group-hover:text-[var(--kp-brand)]"
+                      >
+                        {g.title}
+                      </Link>
                     </div>
                     {!isSeed && (
                       <button
                         type="button"
                         title="删除空库"
                         onClick={() => setDeleteId(g.id)}
-                        className="rounded-lg p-1.5 text-[var(--kp-text-3)] opacity-0 transition group-hover:opacity-100 hover:bg-red-500/10 hover:text-red-500"
+                        className="rounded-xl border border-transparent p-1.5 text-[var(--kp-text-3)] opacity-0 transition group-hover:opacity-100 hover:border-red-200 hover:bg-red-50 hover:text-red-500"
                       >
                         <Trash2 className="h-4 w-4" />
                       </button>
                     )}
                   </div>
 
-                  <p className="relative mb-4 line-clamp-2 min-h-[2.5rem] text-sm leading-relaxed text-[var(--kp-text-2)] transition-colors group-hover:text-[var(--kp-text-1)]">
+                  <p className="relative mb-4 line-clamp-2 min-h-[2.5rem] text-sm leading-relaxed text-[var(--kp-text-2)]">
                     {g.description || "暂无说明"}
                   </p>
 
                   {recent.length > 0 && (
-                    <ul className="relative mb-5 space-y-1.5 border-t border-[var(--kp-divider)]/80 pt-4">
+                    <ul className="relative mb-5 space-y-1.5 rounded-2xl border border-white/50 bg-white/40 p-3">
                       {recent.map((p) => (
                         <li key={p.slug}>
                           <Link
                             href={postDetailHref(p.slug, g.id)}
-                            className="group/item flex items-center gap-2 text-sm text-[var(--kp-text-2)] transition-colors hover:text-[var(--kp-brand-deep)]"
+                            className="group/item flex items-center gap-2 text-sm text-[var(--kp-text-2)] transition-colors hover:text-[var(--kp-brand)]"
                           >
-                            <ChevronRight className="h-3.5 w-3.5 shrink-0 text-[var(--kp-text-3)] transition-transform group-hover/item:translate-x-0.5" />
+                            <ChevronRight className="h-3.5 w-3.5 shrink-0 text-[var(--kp-brand-light)] transition-transform group-hover/item:translate-x-0.5" />
                             <span className="truncate">{p.title}</span>
                           </Link>
                         </li>
@@ -292,22 +296,16 @@ export default function GardensPage() {
                   )}
 
                   <div className="relative mt-auto flex items-center justify-between gap-3 pt-1">
-                    <span className="text-xs text-[var(--kp-text-3)]">
-                      <span className="font-semibold tabular-nums text-[var(--kp-text-1)] transition-colors group-hover:text-[var(--kp-brand-deep)]">
+                    <span className="inline-flex items-center gap-1.5 rounded-full border border-white/60 bg-white/55 px-3 py-1 text-xs text-[var(--kp-text-3)]">
+                      <FileText className="h-3 w-3 text-[var(--kp-brand)]" />
+                      <span className="font-semibold tabular-nums text-[var(--kp-text-1)]">
                         {count}
-                      </span>{" "}
+                      </span>
                       篇文章
                     </span>
                     <Link
                       href={homeHref}
-                      className={cn(
-                        buttonVariants({ size: "sm" }),
-                        "inline-flex items-center gap-1 text-xs shadow-sm transition-all duration-300",
-                        /* 触控设备常显；精细指针设备仅 hover / 键盘 focus 出现 */
-                        "opacity-100 translate-y-0",
-                        "md:translate-y-1 md:opacity-0 md:group-hover:translate-y-0 md:group-hover:opacity-100",
-                        "md:focus-visible:translate-y-0 md:focus-visible:opacity-100",
-                      )}
+                      className="inline-flex h-9 items-center gap-1.5 rounded-full bg-[var(--kp-brand)] px-4 text-xs font-semibold text-white shadow-[0_8px_20px_-8px_rgba(0,135,235,0.55)] transition-all duration-300 hover:-translate-y-0.5 hover:bg-[var(--kp-brand-dark)]"
                     >
                       打开首页
                       <ArrowRight className="h-3 w-3 transition-transform group-hover:translate-x-0.5" />

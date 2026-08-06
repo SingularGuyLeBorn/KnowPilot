@@ -268,6 +268,7 @@ export function loadAboutProfile(): AboutProfile {
     github: data.github || "",
     site: data.site || "",
     email: data.email || "",
+    mbti: data.mbti?.trim() || undefined,
     avatar: data.avatar || undefined,
     focus: hasRichFocus ? parseKeyedList(focusBlock) : parseSimpleList(focusBlock).map((t) => ({ title: t, description: "" })),
     roles: parseTagValueList(data.roles || ""),
