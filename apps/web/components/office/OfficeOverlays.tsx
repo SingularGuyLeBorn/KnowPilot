@@ -6,12 +6,14 @@ import { motion, AnimatePresence } from "framer-motion";
 import { ArrowLeft, ExternalLink, X } from "lucide-react";
 import {
   ABOUT_FACTS,
-  BOARD_POSTER,
+  ARCHITECTURE_BOARD,
   BOARD_STICKIES,
+  BOOKSHELF_TITLES,
+  FORMULA_SHEETS,
   HOTSPOT_META,
   JOURNEY_STOPS,
-  KNOWLEDGE_NOTES,
-  MONITOR_APPS,
+  KNOWLEDGE_BOARD,
+  MONITOR_WALL,
   OFFICE_BRAND,
   PROJECTS,
   type OfficeHotspotId,
@@ -87,6 +89,10 @@ export function OfficeOverlays({ hotspot, onClose }: OfficeOverlaysProps) {
                 {kind === "agents" && <AgentsPanel />}
                 {kind === "fun" && <FunPanel hotspot={hotspot} />}
                 {kind === "mood" && <MoodPanel />}
+                {kind === "server" && <ServerPanel />}
+                {kind === "bookshelf" && <BookshelfPanel />}
+                {kind === "architecture" && <ArchitecturePanel />}
+                {kind === "formulas" && <FormulasPanel />}
 
                 <div className="mt-6 flex justify-center">
                   <button
@@ -110,11 +116,11 @@ export function OfficeOverlays({ hotspot, onClose }: OfficeOverlaysProps) {
 function titleFor(kind: OverlayKind): string {
   switch (kind) {
     case "projects":
-      return "Publications · 能力矩阵";
+      return "多屏墙 · 能力矩阵";
     case "about":
       return "Quick Facts";
     case "knowledge":
-      return "架构公告板";
+      return "知识库看板";
     case "journey":
       return "Oasis Journey";
     case "garden":
@@ -125,94 +131,71 @@ function titleFor(kind: OverlayKind): string {
       return "角落彩蛋";
     case "mood":
       return "书房氛围";
+    case "server":
+      return "NVIDIA 推理机架";
+    case "bookshelf":
+      return "AI Library";
+    case "architecture":
+      return "Transformer 架构板";
+    case "formulas":
+      return "桌面推导草稿";
   }
 }
 
-/** 对齐参考「论文阅读器」：Abstract + Keywords，正文换成见微架构 */
+/** 整齐知识库看板浮层 */
 function PaperReader({ onClose }: { onClose: () => void }) {
   return (
     <div className="relative">
-      <div className="flex gap-0">
-        {/* 侧栏缩略条 */}
-        <aside className="hidden w-16 shrink-0 flex-col gap-2 border-r border-[#E2E8F0] bg-[#EEF2F7] p-2 sm:flex">
-          {KNOWLEDGE_NOTES.map((n, i) => (
-            <div
-              key={n.title}
-              className="aspect-[3/4] rounded-sm border border-[#CBD5E1] bg-white p-1"
-              title={n.title}
-            >
-              <div className="h-1 w-full bg-[#BFDBFE]" />
-              <div className="mt-1 space-y-0.5">
-                {[1, 2, 3].map((j) => (
-                  <div key={j} className="h-0.5 w-full bg-[#E2E8F0]" />
-                ))}
-              </div>
-              <p className="mt-1 text-[7px] leading-tight text-[#64748B]">#{i + 1}</p>
-            </div>
-          ))}
-          <div className="mx-auto mt-2 flex h-10 w-10 items-center justify-center rounded-full bg-[var(--kp-brand)] text-[10px] font-bold text-white shadow">
-            SPEC
-          </div>
-        </aside>
-
-        <article className="min-w-0 flex-1 px-5 py-6 sm:px-8 sm:py-8">
-          <div className="mb-4 flex items-start justify-between gap-3">
-            <div>
-              <p className="text-[11px] tracking-wide text-[#64748B]">
-                {OFFICE_BRAND.en} · Architecture Note
-              </p>
-              <h2 className="mt-2 font-serif text-xl font-semibold leading-snug text-[#0F172A] sm:text-2xl">
-                {BOARD_POSTER.title}
-              </h2>
-              <p className="mt-2 text-xs text-[#0284C7]">{BOARD_POSTER.subtitle}</p>
-            </div>
-            <button
-              type="button"
-              onClick={onClose}
-              className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[#64748B] hover:bg-black/5"
-              aria-label="关闭"
-            >
-              <X className="h-4 w-4" />
-            </button>
-          </div>
-
-          {BOARD_POSTER.sections.map((s) => (
-            <section key={s.heading} className="mb-5">
-              <h3 className="font-serif text-base font-bold text-[#0F172A]">{s.heading}</h3>
-              <p className="mt-2 text-sm leading-relaxed text-[#334155]">{s.body}</p>
-            </section>
-          ))}
-
-          <p className="text-sm text-[#0F172A]">
-            <span className="font-semibold">Keywords: </span>
-            <span className="text-[#475569]">{BOARD_POSTER.keywords.join("; ")}</span>
-          </p>
-
-          <div className="mt-5 flex flex-wrap gap-2">
-            {BOARD_STICKIES.map((s) => (
-              <span
-                key={s.label}
-                className="rounded-sm px-2 py-1 text-[11px] font-medium text-[#1E293B]"
-                style={{ background: s.color }}
-              >
-                {s.label}
-              </span>
-            ))}
-          </div>
-
-          <div className="mt-6 space-y-3 border-t border-[#E2E8F0] pt-5">
-            <p className="text-xs font-semibold uppercase tracking-wider text-[#64748B]">
-              1 Introduction · 铁律摘录
+      <article className="min-w-0 flex-1 px-5 py-6 sm:px-8 sm:py-8">
+        <div className="mb-4 flex items-start justify-between gap-3">
+          <div>
+            <p className="text-[11px] tracking-wide text-[#64748B]">
+              {OFFICE_BRAND.en} · Knowledge Board
             </p>
-            {KNOWLEDGE_NOTES.map((n) => (
-              <div key={n.title}>
-                <h4 className="text-sm font-semibold text-[#0F172A]">{n.title}</h4>
-                <p className="mt-1 text-sm leading-relaxed text-[#475569]">{n.body}</p>
-              </div>
-            ))}
+            <h2 className="mt-2 text-xl font-semibold tracking-tight text-[#0F172A] sm:text-2xl">
+              知识库看板 · Gardens
+            </h2>
+            <p className="mt-2 text-xs text-[#0284C7]">content/ · Markdown 为唯一事实源</p>
           </div>
-        </article>
-      </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[#64748B] hover:bg-black/5"
+            aria-label="关闭"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        <ul className="space-y-2">
+          {KNOWLEDGE_BOARD.map((g) => (
+            <li key={g.id}>
+              <Link
+                href={`/gardens/${g.id}`}
+                className="flex items-center justify-between gap-3 rounded-xl border border-[#E2E8F0] bg-white px-4 py-3 transition hover:border-[var(--kp-brand)]/40 hover:shadow-sm"
+              >
+                <div>
+                  <p className="font-semibold text-[#0F172A]">{g.title}</p>
+                  <p className="text-sm text-[#64748B]">{g.meta}</p>
+                </div>
+                <span className="text-xs font-medium text-[var(--kp-brand)]">{g.id}</span>
+              </Link>
+            </li>
+          ))}
+        </ul>
+
+        <div className="mt-5 flex flex-wrap gap-2">
+          {BOARD_STICKIES.map((s) => (
+            <span
+              key={s.label}
+              className="rounded-sm px-2 py-1 text-[11px] font-medium text-[#1E293B]"
+              style={{ background: s.color }}
+            >
+              {s.label}
+            </span>
+          ))}
+        </div>
+      </article>
 
       <div className="sticky bottom-0 flex justify-center border-t border-[#E2E8F0] bg-[#F8FAFC]/95 py-3 backdrop-blur">
         <button
@@ -228,6 +211,105 @@ function PaperReader({ onClose }: { onClose: () => void }) {
   );
 }
 
+function ServerPanel() {
+  return (
+    <div className="space-y-4 text-sm leading-relaxed text-[var(--kp-text-2)]">
+      <p className="rounded-2xl bg-[#052E16] px-4 py-3 text-[#A3E635]">
+        NVIDIA DGX 风格机架 · H100 / NVLink 意象。本地优先不等于没有算力想象——见微的 Agent 与
+        vision / embedding 任务可以挂到本机或远端 GPU。
+      </p>
+      <dl className="grid gap-2 sm:grid-cols-2">
+        {[
+          ["品牌灯条", "NVIDIA Green #76B900"],
+          ["互联", "双主机网线桥接"],
+          ["用途", "推理 · 微调草稿 · OCR/Vision"],
+          ["原则", "密钥不进 Git · 本地落盘"],
+        ].map(([k, v]) => (
+          <div key={k} className="rounded-xl border border-white/50 bg-white/70 px-3 py-2">
+            <dt className="text-[10px] font-semibold uppercase tracking-wide text-[var(--kp-text-3)]">
+              {k}
+            </dt>
+            <dd className="mt-0.5 font-medium text-[var(--kp-ink)]">{v}</dd>
+          </div>
+        ))}
+      </dl>
+    </div>
+  );
+}
+
+function BookshelfPanel() {
+  return (
+    <div className="space-y-3">
+      <p className="text-sm text-[var(--kp-text-2)]">
+        书架藏书：深度学习、Transformer、强化学习与 Agent 系统设计——和见微的运行时同频。
+      </p>
+      <ul className="grid gap-2 sm:grid-cols-2">
+        {BOOKSHELF_TITLES.map((t) => (
+          <li
+            key={t}
+            className="rounded-xl border border-white/50 bg-white/75 px-3 py-2 text-sm font-medium text-[var(--kp-ink)]"
+          >
+            {t}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function ArchitecturePanel() {
+  return (
+    <div className="space-y-4">
+      <div>
+        <h3 className="text-lg font-semibold text-[var(--kp-ink)]">{ARCHITECTURE_BOARD.title}</h3>
+        <p className="text-sm text-[var(--kp-brand)]">{ARCHITECTURE_BOARD.subtitle}</p>
+      </div>
+      <ol className="space-y-2">
+        {ARCHITECTURE_BOARD.blocks.map((b, i) => (
+          <li
+            key={b.label}
+            className="flex items-start gap-3 rounded-xl border border-white/50 bg-white/75 px-3 py-2.5"
+          >
+            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-[var(--kp-brand)] text-xs font-bold text-white">
+              {i + 1}
+            </span>
+            <div>
+              <p className="font-semibold text-[var(--kp-ink)]">{b.label}</p>
+              <p className="font-mono text-sm text-[var(--kp-text-2)]">{b.detail}</p>
+            </div>
+          </li>
+        ))}
+      </ol>
+      <p className="text-xs text-[var(--kp-text-3)]">{ARCHITECTURE_BOARD.stack.join(" · ")}</p>
+    </div>
+  );
+}
+
+function FormulasPanel() {
+  return (
+    <div className="space-y-3">
+      <p className="text-sm text-[var(--kp-text-2)]">
+        桌面 A4：大模型核心推导草稿——Attention、CE Loss、KV Cache、RoPE、MoE、RLHF。
+      </p>
+      <div className="grid gap-3 sm:grid-cols-2">
+        {FORMULA_SHEETS.map((s) => (
+          <article
+            key={s.title}
+            className="rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] px-3 py-3 shadow-sm"
+          >
+            <h4 className="text-sm font-bold text-[#0F172A]">{s.title}</h4>
+            {s.lines.map((line) => (
+              <p key={line} className="mt-1 font-mono text-xs leading-relaxed text-[#334155]">
+                {line}
+              </p>
+            ))}
+          </article>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function ProjectsPanel() {
   const [filter, setFilter] = useState("全部");
   const tags = ["全部", ...Array.from(new Set(PROJECTS.map((p) => p.tag)))];
@@ -236,20 +318,20 @@ function ProjectsPanel() {
   return (
     <div>
       <p className="mb-3 text-sm text-[var(--kp-text-2)]">
-        显示器上的桌面图标对应真实路由——点开即进见微能力面。
+        量化级多屏墙：每块屏挂一条见微能力面，点开即进真实路由。
       </p>
       <div className="mb-4 grid grid-cols-4 gap-2 sm:grid-cols-8">
-        {MONITOR_APPS.map((app) => (
+        {MONITOR_WALL.map((app) => (
           <Link
             key={app.id}
             href={app.href}
             className="flex flex-col items-center gap-1 rounded-xl p-2 transition hover:bg-white/80"
           >
             <span
-              className="flex h-10 w-10 items-center justify-center rounded-xl text-[10px] font-bold text-white shadow-sm"
+              className="flex h-10 w-10 items-center justify-center rounded-xl text-[9px] font-bold text-white shadow-sm"
               style={{ background: app.color }}
             >
-              {app.label.slice(0, 2)}
+              {app.label.slice(0, 3)}
             </span>
             <span className="text-[10px] text-[var(--kp-text-2)]">{app.label}</span>
           </Link>
