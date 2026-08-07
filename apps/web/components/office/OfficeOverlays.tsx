@@ -81,7 +81,7 @@ export function OfficeOverlays({ hotspot, onClose }: OfficeOverlaysProps) {
               <button
                 type="button"
                 onClick={onClose}
-                className="inline-flex items-center gap-2 rounded-full bg-[#111827] px-5 py-2.5 text-sm font-medium text-white shadow-md transition hover:bg-[#1f2937]"
+                className="inline-flex items-center gap-2 rounded-full bg-[var(--kp-brand)] px-5 py-2.5 text-sm font-medium text-white shadow-md transition hover:brightness-110"
               >
                 <ArrowLeft className="h-4 w-4" />
                 Back

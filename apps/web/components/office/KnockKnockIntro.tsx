@@ -143,7 +143,7 @@ export function KnockKnockIntro({ onEnter }: KnockKnockIntroProps) {
         <motion.div
           key="fade"
           className="absolute inset-0 z-40"
-          style={{ background: "#E8ECEF" }}
+          style={{ background: "#E8EEF5" }}
           initial={{ opacity: 1 }}
           animate={{ opacity: 0 }}
           transition={{ duration: 0.55 }}

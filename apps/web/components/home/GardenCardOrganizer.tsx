@@ -101,12 +101,21 @@ function toCards(gardens: Garden[]): GardenCard[] {
   }));
 }
 
-/** 自定义图标：书脊/文档，避开 Lucide */
-function CardGlyph({ className }: { className?: string }) {
+/** 自定义图标：书脊/文档；选中态不用描边方框，避免绿卡上冒出「白框」 */
+function CardGlyph({ className, solid }: { className?: string; solid?: boolean }) {
   return (
     <svg viewBox="0 0 32 32" className={className} fill="none" aria-hidden>
-      <rect x="7" y="5" width="18" height="22" rx="3" stroke="currentColor" strokeWidth="1.7" fill="currentColor" fillOpacity="0.12" />
-      <path d="M11 11h10M11 15h8M11 19h6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+      {solid ? (
+        <>
+          <rect x="7" y="5" width="18" height="22" rx="3" fill="currentColor" fillOpacity="0.22" />
+          <path d="M11 11h10M11 15h8M11 19h6" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" opacity="0.9" />
+        </>
+      ) : (
+        <>
+          <rect x="7" y="5" width="18" height="22" rx="3" stroke="currentColor" strokeWidth="1.5" fill="currentColor" fillOpacity="0.08" />
+          <path d="M11 11h10M11 15h8M11 19h6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+        </>
+      )}
     </svg>
   );
 }
@@ -165,18 +174,18 @@ function slotTransform(
     };
   }
 
-  const step = compact ? 50 : 60;
-  // 推开幅度略收，切换时位移更小、弹簧更顺
-  const push = dist === 0 ? 0 : Math.sign(dist) * (compact ? 16 : 22) * Math.abs(dist);
+  const step = compact ? 52 : 64;
+  // 侧卡再推开一点 + z 拉开，避免 preserve-3d 下白卡几何穿进选中卡（竖白线根因）
+  const push = dist === 0 ? 0 : Math.sign(dist) * (compact ? 22 : 30) * Math.abs(dist);
   const isActive = dist === 0;
 
   return {
     x: t * step + push,
-    y: isActive ? -14 : Math.abs(t) * 1.5 + Math.abs(dist) * 0.8,
-    z: isActive ? 72 : -10 - Math.abs(dist) * 16,
-    rotateY: isActive ? -6 : -34 + t * 1.8,
-    rotateZ: isActive ? 0 : t * 0.5,
-    scale: isActive ? 1.06 : 0.95,
+    y: isActive ? -16 : Math.abs(t) * 2 + Math.abs(dist) * 1.2,
+    z: isActive ? 96 : -28 - Math.abs(dist) * 22,
+    rotateY: isActive ? 0 : -38 + t * 2,
+    rotateZ: isActive ? 0 : t * 0.55,
+    scale: isActive ? 1.08 : 0.92,
   };
 }
 
@@ -231,33 +240,48 @@ function FanCard({
       transition={reducedMotion ? { duration: 0 } : FAN_SPRING}
       aria-hidden
     >
-      {/* 无硬白描边：叠卡时的竖白线多半来自 border / 1px ring */}
+      {/* 选中卡必须不透明：backdrop-blur + 半透明侧卡在 preserve-3d 下会穿出竖白线 */}
       <div
         className={cn(
           "relative h-full w-full overflow-hidden rounded-[1.15rem] text-left",
-          "backdrop-blur-xl",
-          selected ? "text-white" : "bg-white/70 text-[var(--kp-text-1)]",
+          selected ? "text-white" : "text-[var(--kp-text-1)] backdrop-blur-md",
         )}
         style={{
           background: selected
             ? style.fill
-            : "linear-gradient(165deg, rgba(255,255,255,0.82), rgba(255,255,255,0.58))",
-          // 内描边低对比，避免叠卡缝窜出竖白线（旧版 border-white + 1px ring）
+            : `linear-gradient(165deg, #ffffff 0%, color-mix(in srgb, ${style.soft} 55%, #ffffff) 48%, #f7fafc 100%)`,
           boxShadow: selected
-            ? `0 26px 48px -16px ${style.glow}, inset 0 0 0 1px rgba(255,255,255,0.14)`
-            : "0 14px 32px -18px rgba(0,80,160,0.22), inset 0 0 0 1px rgba(0,0,0,0.05)",
+            ? `0 28px 52px -14px ${style.glow}, 0 0 0 1px rgba(255,255,255,0.08)`
+            : `0 16px 36px -16px rgba(0,80,160,0.28), 0 0 0 1px color-mix(in srgb, ${style.solid} 14%, transparent), inset 0 1px 0 rgba(255,255,255,0.85)`,
+          isolation: "isolate",
         }}
       >
-        {/* 柔光：只从左上铺开，避免右缘亮出竖白线 */}
-        <span
-          aria-hidden
-          className="pointer-events-none absolute -left-6 -top-8 h-28 w-28 rounded-full opacity-70 blur-2xl"
-          style={{ background: selected ? "rgba(255,255,255,0.28)" : style.soft }}
-        />
-        <span
-          aria-hidden
-          className="pointer-events-none absolute inset-x-3 top-0 h-px bg-gradient-to-r from-transparent via-white/50 to-transparent"
-        />
+        {/* 侧卡：左侧色带 + 角光，拉开与纯白扁平的差距 */}
+        {!selected && (
+          <>
+            <span
+              aria-hidden
+              className="pointer-events-none absolute inset-y-3 left-0 w-[3px] rounded-full"
+              style={{ background: `linear-gradient(180deg, ${style.solid}, ${style.deep})` }}
+            />
+            <span
+              aria-hidden
+              className="pointer-events-none absolute -right-4 -top-6 h-20 w-20 rounded-full opacity-80 blur-2xl"
+              style={{ background: style.soft }}
+            />
+            <span
+              aria-hidden
+              className="pointer-events-none absolute inset-x-0 bottom-0 h-1/3 bg-gradient-to-t from-black/[0.04] to-transparent"
+            />
+          </>
+        )}
+        {selected && (
+          <span
+            aria-hidden
+            className="pointer-events-none absolute -left-8 -top-10 h-32 w-32 rounded-full opacity-50 blur-3xl"
+            style={{ background: "rgba(255,255,255,0.35)" }}
+          />
+        )}
 
         <div className="relative flex h-full flex-col px-2.5 pb-2.5 pt-3">
           <div className="flex items-start justify-between gap-1">
@@ -265,9 +289,14 @@ function FanCard({
               className={cn(
                 "inline-flex max-w-[88%] items-center truncate rounded-full px-2 py-0.5 text-[9px] font-bold tracking-wide",
                 selected
-                  ? "bg-white/20 text-white"
-                  : "bg-[var(--kp-brand-soft)] text-[var(--kp-brand-deep)]",
+                  ? "bg-black/15 text-white"
+                  : "bg-white/80 text-[var(--kp-brand-deep)] shadow-sm",
               )}
+              style={
+                !selected
+                  ? { boxShadow: `inset 0 0 0 1px color-mix(in srgb, ${style.solid} 22%, transparent)` }
+                  : undefined
+              }
             >
               <span className={cn("mr-0.5 opacity-70", selected ? "text-white" : "text-[var(--kp-brand)]")}>
                 {"{"}
@@ -278,27 +307,25 @@ function FanCard({
               </span>
             </span>
             <CardGlyph
-              className={cn("h-3.5 w-3.5 shrink-0 opacity-80", selected ? "text-white" : "text-[var(--kp-brand)]")}
+              solid={selected}
+              className={cn("h-3.5 w-3.5 shrink-0 opacity-90", selected ? "text-white" : "text-[var(--kp-brand)]")}
             />
           </div>
 
-          <div className="mt-2 flex flex-wrap gap-1">
-            <span
-              className={cn(
-                "inline-flex items-center rounded-md px-1.5 py-0.5 text-[9px] font-semibold tabular-nums",
-                selected ? "bg-white/18 text-white" : "bg-black/[0.04] text-[var(--kp-text-2)]",
-              )}
-            >
-              [{garden.postCount}]
-            </span>
-            <span
-              className={cn(
-                "inline-flex items-center rounded-md px-1.5 py-0.5 text-[9px] font-medium",
-                selected ? "bg-white/12 text-white/85" : "bg-black/[0.03] text-[var(--kp-text-3)]",
-              )}
-            >
-              篇
-            </span>
+          {/* 篇数条与卡同宽，避免碎小白块 */}
+          <div
+            className={cn(
+              "mt-2 flex w-full items-center justify-between rounded-lg px-2 py-1 text-[9px] font-semibold tabular-nums",
+              selected ? "bg-black/15 text-white" : "bg-white/70 text-[var(--kp-text-2)]",
+            )}
+            style={
+              !selected
+                ? { boxShadow: `inset 0 0 0 1px color-mix(in srgb, ${style.solid} 12%, transparent)` }
+                : undefined
+            }
+          >
+            <span>[{garden.postCount}]</span>
+            <span className={selected ? "text-white/85" : "text-[var(--kp-text-3)]"}>篇</span>
           </div>
 
           <div className="mt-auto min-w-0 space-y-1.5">
@@ -323,11 +350,6 @@ function FanCard({
                 displayGardenTitle(garden.title)
               )}
             </p>
-            {!selected && (
-              <p className="text-[10px] text-[var(--kp-text-3)]">
-                <SquareMark className="text-[10px] font-semibold">{garden.postCount} 篇</SquareMark>
-              </p>
-            )}
           </div>
         </div>
       </div>
@@ -535,60 +557,94 @@ export function GardenCardOrganizer({ gardens }: { gardens: Garden[] }) {
               </div>
             </div>
 
-            {/* 右侧详情 */}
+            {/* 右侧详情：网格/光斑/进度条，避免纯色扁平板 */}
             <div
-              className="relative overflow-hidden rounded-[1.75rem] p-5 text-white shadow-[0_24px_56px_-22px_rgba(0,80,160,0.35)]"
+              className="relative flex h-full min-h-[320px] flex-col overflow-hidden rounded-[1.75rem] p-5 text-white"
               style={{
                 background: currentStyle?.fill ?? "var(--kp-brand)",
-                boxShadow: `0 24px 56px -22px rgba(0,80,160,0.35), inset 0 0 0 1px rgba(255,255,255,0.16)`,
+                boxShadow: `0 28px 60px -18px ${currentStyle?.glow ?? "rgba(0,80,160,0.35)"}, 0 0 0 1px rgba(255,255,255,0.12)`,
               }}
             >
               <div
                 aria-hidden
-                className="pointer-events-none absolute -right-10 -top-10 h-40 w-40 rounded-full bg-white/20 blur-3xl"
+                className="pointer-events-none absolute inset-0 opacity-[0.14]"
+                style={{
+                  backgroundImage:
+                    "linear-gradient(rgba(255,255,255,0.35) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.35) 1px, transparent 1px)",
+                  backgroundSize: "22px 22px",
+                  maskImage: "radial-gradient(ellipse 80% 70% at 70% 20%, black, transparent)",
+                }}
+              />
+              <div
+                aria-hidden
+                className="pointer-events-none absolute -right-12 -top-12 h-48 w-48 rounded-full bg-white/25 blur-3xl"
+              />
+              <div
+                aria-hidden
+                className="pointer-events-none absolute -bottom-16 -left-10 h-40 w-40 rounded-full bg-black/20 blur-3xl"
               />
               {current && currentStyle ? (
                 <motion.div
                   key={current.id}
+                  className="relative flex flex-1 flex-col"
                   initial={reduced ? false : { opacity: 0, y: 8 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={reduced ? { duration: 0 } : { duration: 0.32, ease: [0.22, 1, 0.36, 1] }}
                 >
-                  <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-white/70">
-                    Selected Garden
-                  </p>
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-white/70">
+                      Selected Garden
+                    </p>
+                    <span className="rounded-full bg-white/15 px-2 py-0.5 text-[10px] font-semibold text-white/85">
+                      LIVE
+                    </span>
+                  </div>
                   <h3 className="mt-1 text-xl font-black tracking-tight">
                     <span className="opacity-70">{"{"}</span> {displayGardenTitle(current.title)}{" "}
                     <span className="opacity-70">{"}"}</span>
                   </h3>
-                  <p className="mt-1.5 inline-flex items-center rounded-full bg-white/15 px-2.5 py-0.5 text-xs text-white/90">
+                  <p className="mt-1.5 inline-flex items-center rounded-full bg-black/15 px-2.5 py-0.5 text-xs text-white/90">
                     [{formatGardenId(current.id)}]
                   </p>
                   <p className="mt-3 text-sm leading-relaxed text-white/90">{current.description}</p>
 
                   <div className="mt-5 grid grid-cols-2 gap-2">
-                    <div className="rounded-xl bg-white/15 px-3 py-2.5 backdrop-blur-sm">
+                    <div className="rounded-xl bg-black/15 px-3 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.2)]">
                       <p className="text-[10px] text-white/70">文章</p>
                       <p className="text-2xl font-black tabular-nums">{current.postCount}</p>
                     </div>
-                    <div className="rounded-xl bg-white/15 px-3 py-2.5 backdrop-blur-sm">
+                    <div className="rounded-xl bg-black/15 px-3 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.2)]">
                       <p className="text-[10px] text-white/70">近期</p>
                       <p className="text-2xl font-black tabular-nums">{current.recentPosts.length}</p>
                     </div>
                   </div>
 
-                  <div className="mt-4">
+                  <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-black/20">
+                    <motion.div
+                      className="h-full rounded-full bg-white/80"
+                      initial={false}
+                      animate={{
+                        width: `${Math.min(100, 12 + current.postCount * 4)}%`,
+                      }}
+                      transition={reduced ? { duration: 0 } : { type: "spring", stiffness: 200, damping: 28 }}
+                    />
+                  </div>
+
+                  <div className="mt-4 flex-1">
                     <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-white/70">
                       Recent activity
                     </p>
                     {current.recentPosts.length > 0 ? (
-                      <ul className="space-y-1.5">
-                        {current.recentPosts.slice(0, 3).map((p) => (
+                      <ul className="w-full space-y-1.5">
+                        {current.recentPosts.slice(0, 3).map((p, i) => (
                           <li
                             key={p.slug}
-                            className="truncate rounded-full bg-white/12 px-2.5 py-1.5 text-[11px] text-white/90"
+                            className="flex w-full items-center gap-2 truncate rounded-xl bg-black/15 px-2.5 py-1.5 text-[11px] text-white/90 shadow-[inset_0_1px_0_rgba(255,255,255,0.12)]"
                           >
-                            {p.title}
+                            <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-md bg-white/15 text-[10px] font-bold tabular-nums">
+                              {i + 1}
+                            </span>
+                            <span className="min-w-0 truncate">{p.title}</span>
                           </li>
                         ))}
                       </ul>
@@ -599,7 +655,7 @@ export function GardenCardOrganizer({ gardens }: { gardens: Garden[] }) {
 
                   <Link
                     href={`/gardens/${current.id}`}
-                    className="mt-5 inline-flex h-10 w-full items-center justify-center gap-1.5 rounded-full bg-white text-sm font-bold text-[var(--kp-text-1)] shadow-sm transition hover:bg-white/90"
+                    className="mt-5 inline-flex h-10 w-full items-center justify-center gap-1.5 rounded-full bg-white text-sm font-bold text-[var(--kp-text-1)] shadow-[0_8px_24px_-8px_rgba(0,0,0,0.35)] transition hover:bg-white/92 hover:shadow-[0_12px_28px_-8px_rgba(0,0,0,0.4)]"
                   >
                     进入花园
                     <svg viewBox="0 0 12 12" className="h-3.5 w-3.5" fill="none" aria-hidden>

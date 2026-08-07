@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useRef } from "react";
 import { Canvas, useFrame, ThreeEvent } from "@react-three/fiber";
 import {
   ContactShadows,
@@ -9,7 +9,13 @@ import {
   Text,
 } from "@react-three/drei";
 import * as THREE from "three";
-import type { OfficeHotspotId } from "./officeContent";
+import {
+  BOARD_POSTER,
+  BOARD_STICKIES,
+  JOURNEY_STOPS,
+  MONITOR_APPS,
+  type OfficeHotspotId,
+} from "./officeContent";
 
 /** Light Tech Studio — 浅色科技工作室 */
 const BG = "#E8EEF5";
@@ -64,26 +70,26 @@ function RoomShell() {
         <planeGeometry args={[10, 10]} />
         <meshStandardMaterial color={FLOOR} roughness={0.72} metalness={0.08} />
       </mesh>
-      {/* 科技网格线 */}
-      {Array.from({ length: 11 }).map((_, i) => (
+      {/* 科技网格线（稀疏，控 draw call） */}
+      {Array.from({ length: 7 }).map((_, i) => (
         <mesh
           key={`gx-${i}`}
           rotation={[-Math.PI / 2, 0, 0]}
-          position={[-4.5 + i * 0.9, 0.003, 0]}
+          position={[-3.6 + i * 1.2, 0.003, 0]}
           receiveShadow
         >
-          <planeGeometry args={[0.018, 10]} />
+          <planeGeometry args={[0.016, 10]} />
           <meshStandardMaterial color={FLOOR_GRID} roughness={1} />
         </mesh>
       ))}
-      {Array.from({ length: 11 }).map((_, i) => (
+      {Array.from({ length: 7 }).map((_, i) => (
         <mesh
           key={`gz-${i}`}
           rotation={[-Math.PI / 2, 0, 0]}
-          position={[0, 0.003, -4.5 + i * 0.9]}
+          position={[0, 0.003, -3.6 + i * 1.2]}
           receiveShadow
         >
-          <planeGeometry args={[10, 0.018]} />
+          <planeGeometry args={[10, 0.016]} />
           <meshStandardMaterial color={FLOOR_GRID} roughness={1} />
         </mesh>
       ))}
@@ -186,22 +192,47 @@ function DeskSet({
             roughness={0.3}
           />
         </mesh>
-        {/* 屏幕图标格 */}
-        {[
-          [-0.32, 0.68, "#38BDF8"],
-          [-0.08, 0.68, "#22D3EE"],
-          [0.16, 0.68, "#0087EB"],
-          [0.4, 0.68, "#94A3B8"],
-          [-0.32, 0.42, "#0EA5E9"],
-          [-0.08, 0.42, "#67E8F9"],
-          [0.16, 0.42, "#64748B"],
-          [0.4, 0.42, "#F59E0B"],
-        ].map(([x, y, c], i) => (
-          <mesh key={i} position={[x as number, y as number, 0.04]}>
-            <planeGeometry args={[0.16, 0.16]} />
-            <meshBasicMaterial color={c as string} />
-          </mesh>
-        ))}
+        {/* 顶栏：见微 Desk */}
+        <mesh position={[0, 0.82, 0.04]}>
+          <planeGeometry args={[0.98, 0.06]} />
+          <meshBasicMaterial color="#0B3A66" />
+        </mesh>
+        <Text position={[-0.36, 0.82, 0.045]} fontSize={0.032} color="#E0F2FE" anchorX="left">
+          见微 Desk
+        </Text>
+        <mesh position={[0.4, 0.82, 0.045]}>
+          <circleGeometry args={[0.012, 12]} />
+          <meshBasicMaterial color="#22C55E" />
+        </mesh>
+        {/* App 图标矩阵（对齐参考：带标签的能力入口） */}
+        {MONITOR_APPS.map((app, i) => {
+          const col = i % 4;
+          const row = Math.floor(i / 4);
+          const x = -0.36 + col * 0.24;
+          const y = 0.58 - row * 0.28;
+          return (
+            <group key={app.id} position={[x, y, 0.042]}>
+              <mesh>
+                <planeGeometry args={[0.14, 0.14]} />
+                <meshBasicMaterial color={app.color} />
+              </mesh>
+              <mesh position={[0, 0, 0.001]}>
+                <planeGeometry args={[0.08, 0.08]} />
+                <meshBasicMaterial color="#FFFFFF" transparent opacity={0.35} />
+              </mesh>
+              <Text
+                position={[0, -0.1, 0.002]}
+                fontSize={0.028}
+                color="#CBD5E1"
+                anchorX="center"
+                anchorY="top"
+                maxWidth={0.2}
+              >
+                {app.label}
+              </Text>
+            </group>
+          );
+        })}
         <mesh position={[0, 0.12, 0]} castShadow>
           <boxGeometry args={[0.18, 0.24, 0.08]} />
           <meshStandardMaterial color="#334155" metalness={0.4} roughness={0.4} />
@@ -212,12 +243,12 @@ function DeskSet({
         </mesh>
         <Text
           position={[0, 0.95, 0.05]}
-          fontSize={0.07}
-          color="#E0F2FE"
+          fontSize={0.055}
+          color="#0B3A66"
           anchorX="center"
-          maxWidth={1}
+          maxWidth={1.2}
         >
-          OasisMind Desk
+          Chat · Garden · Swarm
         </Text>
       </group>
 
@@ -656,15 +687,12 @@ function SceneContent({ onSelect, activeId }: OfficeSceneProps) {
 }
 
 export function OfficeScene({ onSelect, activeId }: OfficeSceneProps) {
-  const [dpr, setDpr] = useState(1.5);
-
   return (
     <Canvas
       className="h-full w-full touch-none"
       shadows
-      dpr={dpr}
+      dpr={[1, 1.5]}
       camera={{ position: [2.8, 2.4, 4.2], fov: 42, near: 0.1, far: 40 }}
-      onCreated={() => setDpr(Math.min(2, window.devicePixelRatio || 1.5))}
       gl={{ antialias: true, alpha: false, powerPreference: "high-performance" }}
     >
       <SceneContent onSelect={onSelect} activeId={activeId} />

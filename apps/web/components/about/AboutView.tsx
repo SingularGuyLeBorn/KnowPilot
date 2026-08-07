@@ -52,6 +52,10 @@ const BlackHoleScene = dynamic(
   () => import("@/components/about/BlackHoleScene").then((m) => m.BlackHoleScene),
   { ssr: false, loading: () => null },
 );
+const SeasideCanvas = dynamic(
+  () => import("@/components/about/SeasideCanvas").then((m) => m.SeasideCanvas),
+  { ssr: false, loading: () => null },
+);
 const easeSpring = [0.22, 1, 0.36, 1] as const;
 const hoverSpring = { type: "spring", stiffness: 260, damping: 26 } as const;
 
@@ -592,64 +596,38 @@ export function AboutView({ profile }: { profile: AboutProfile }) {
 
 function CosmicFooter() {
   return (
-    <section className="relative mt-6">
-      <motion.div
-        initial={{ opacity: 0, y: 12 }}
-        whileInView={{ opacity: 1, y: 0 }}
-        viewport={{ once: true, amount: 0.4 }}
-        transition={{ type: "spring", stiffness: 260, damping: 26 }}
-        whileHover={{ y: -4, scale: 1.008 }}
-        className="group relative overflow-hidden rounded-[1.75rem] border border-white/60 bg-[color-mix(in_srgb,var(--kp-glass-bg)_88%,white)] px-7 py-12 shadow-[0_16px_48px_-22px_rgba(0,80,160,0.18)] backdrop-blur-xl transition-shadow duration-500 hover:border-[var(--kp-brand)]/25 hover:shadow-[0_28px_64px_-20px_rgba(0,135,235,0.28)] md:px-14 md:py-16"
-      >
-        {/* 氛围光 */}
+    <section className="relative mt-8 overflow-hidden rounded-[1.75rem] border border-white/25 shadow-[0_20px_56px_-24px_rgba(20,40,80,0.45)]">
+      <div className="relative min-h-[280px] md:min-h-[340px]">
+        <SeasideCanvas />
+
+        {/* 可读性渐变：上半略压暗，保证白字对比 */}
         <div
           aria-hidden
-          className="pointer-events-none absolute -left-16 top-0 h-40 w-40 rounded-full bg-[var(--kp-glow-blue)]/35 blur-3xl transition-opacity duration-500 group-hover:opacity-80"
+          className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/55 via-black/25 to-black/10"
         />
         <div
           aria-hidden
-          className="pointer-events-none absolute -right-10 bottom-0 h-36 w-36 rounded-full bg-[var(--kp-glow-peach)]/30 blur-3xl"
+          className="pointer-events-none absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-black/30 to-transparent"
         />
 
-        {/* 细基准线 */}
-        <div aria-hidden className="pointer-events-none absolute inset-x-8 top-[38%] hidden h-px bg-[var(--kp-divider)]/50 md:block" />
-        <div aria-hidden className="pointer-events-none absolute inset-x-8 top-[52%] hidden h-px bg-[var(--kp-divider)]/35 md:block" />
-        <div aria-hidden className="pointer-events-none absolute inset-x-8 top-[66%] hidden h-px bg-[var(--kp-divider)]/25 md:block" />
-
-        {/* 角标 */}
-        <span className="absolute left-5 top-4 text-[10px] font-semibold tracking-[0.2em] text-[var(--kp-text-3)] md:left-7 md:top-5">
-          见微
-        </span>
-        <span className="absolute right-6 top-5 flex gap-1.5 md:right-8" aria-hidden>
-          <span className="h-1 w-1 rounded-full bg-[var(--kp-brand)]/35" />
-          <span className="h-1 w-1 rounded-full bg-[var(--kp-accent)]/40" />
-        </span>
-
-        {/* 正文 */}
-        <div className="relative z-10 mx-auto max-w-3xl text-center">
-          <p className="text-balance text-[clamp(1.15rem,2.6vw,1.65rem)] font-semibold leading-relaxed tracking-tight text-[var(--kp-text-1)]">
+        <motion.div
+          initial={{ opacity: 0, y: 14 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true, amount: 0.35 }}
+          transition={{ type: "spring", stiffness: 260, damping: 26 }}
+          className="relative z-10 flex min-h-[280px] flex-col items-center justify-center px-7 py-14 text-center md:min-h-[340px] md:px-14 md:py-20"
+        >
+          <span className="mb-4 text-[10px] font-semibold tracking-[0.22em] text-white/55">
+            见微 · OasisMind
+          </span>
+          <p className="max-w-3xl text-balance text-[clamp(1.15rem,2.6vw,1.7rem)] font-semibold leading-relaxed tracking-tight text-white drop-shadow-[0_2px_12px_rgba(0,0,0,0.45)]">
             我们的征途是星辰大海，但在那之前，不妨先去码头搞点薯条。
           </p>
-          <p className="kp-display-serif mt-4 text-[clamp(0.95rem,2vw,1.2rem)] italic leading-relaxed text-[var(--kp-text-2)]">
+          <p className="kp-display-serif mt-4 max-w-2xl text-[clamp(0.95rem,2vw,1.2rem)] italic leading-relaxed text-white/80 drop-shadow-[0_1px_8px_rgba(0,0,0,0.4)]">
             Our voyage is to the stars and the sea — but first, fries at the pier.
           </p>
-        </div>
-
-        {/* 右下轻浪线 */}
-        <svg
-          aria-hidden
-          className="pointer-events-none absolute bottom-3 right-6 h-8 w-28 text-[var(--kp-brand)]/25 md:bottom-4 md:right-10 md:h-10 md:w-36"
-          viewBox="0 0 140 40"
-          fill="none"
-        >
-          <path
-            d="M4 28c18-16 36-16 54 0s36 16 54 0 20-10 24-12"
-            stroke="currentColor"
-            strokeWidth="1.4"
-            strokeLinecap="round"
-          />
-        </svg>
-      </motion.div>
+        </motion.div>
+      </div>
     </section>
   );
 }

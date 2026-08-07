@@ -123,13 +123,13 @@ function PostList({
               </>
             );
             const cls =
-              "block truncate rounded-lg border border-white/60 bg-white/70 px-2 py-1 text-[11px] text-[var(--kp-text-2)]";
+              "block w-full truncate rounded-lg bg-black/[0.03] px-2 py-1 text-[11px] text-[var(--kp-text-2)]";
             return (
-              <li key={p.id}>
+              <li key={p.id} className="w-full">
                 {linkable ? (
                   <Link
                     href={postDetailHref(p.slug, p.garden)}
-                    className={cn(cls, "transition-colors hover:border-[var(--kp-brand)]/35 hover:text-[var(--kp-brand)]")}
+                    className={cn(cls, "transition-colors hover:bg-[var(--kp-brand-soft)] hover:text-[var(--kp-brand)]")}
                     title={p.title}
                   >
                     {inner}
@@ -180,14 +180,14 @@ function DayDetailPanel({
   const stale = isPlaceholderData && !!data;
 
   return (
+    // 与上方面板同宽：去掉嵌套白底卡片，用顶部分割线衔接，避免「框中框」
     <div
       className={cn(
-        "rounded-xl bg-white/65 p-3.5 shadow-[0_8px_24px_-16px_rgba(0,80,160,0.18)] backdrop-blur-md transition-opacity duration-200 sm:p-4",
+        "w-full border-t border-black/[0.06] pt-4 transition-opacity duration-200",
         stale && "opacity-70",
       )}
-      style={{ boxShadow: "0 8px 24px -16px rgba(0,80,160,0.18), inset 0 0 0 1px rgba(0,0,0,0.05)" }}
     >
-      <div className="mb-3 flex flex-wrap items-end justify-between gap-2 border-b border-black/[0.05] pb-2.5">
+      <div className="mb-3 flex w-full flex-wrap items-end justify-between gap-2">
         <div>
           <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[var(--kp-text-3)]">
             {"{"} 当日详情 {"}"}
@@ -202,37 +202,60 @@ function DayDetailPanel({
       {isError ? (
         <p className="text-[11px] text-red-500/80">详情加载失败，请稍后重试</p>
       ) : (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid w-full gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <PostList title="新增" tone="created" items={view.created} empty="当日无新增文章" />
           <PostList title="更新" tone="updated" items={view.updated} empty="当日无更新文章" />
           <PostList title="删除" tone="deleted" items={view.deleted} empty="当日无删除文章" />
 
           <div
-            className="rounded-xl bg-[var(--kp-brand-soft)]/70 px-3 py-2.5"
-            style={{ boxShadow: "inset 0 0 0 1px color-mix(in srgb, var(--kp-brand) 18%, transparent)" }}
+            className="relative overflow-hidden rounded-2xl px-3.5 py-3 text-white"
+            style={{
+              background:
+                "linear-gradient(155deg, color-mix(in srgb, var(--kp-brand) 78%, white), var(--kp-brand-deep))",
+              boxShadow:
+                "0 16px 36px -16px color-mix(in srgb, var(--kp-brand) 55%, transparent), inset 0 1px 0 rgba(255,255,255,0.28)",
+            }}
           >
-            <p className="text-[10px] font-semibold tracking-wide text-[var(--kp-brand)]">
-              {"{"} Token {"}"}
-            </p>
-            {view.tokens.total > 0 ? (
-              <>
-                <p className="mt-0.5 text-xl font-black tabular-nums text-[var(--kp-text-1)]">
-                  {formatTokens(view.tokens.total)}
-                  <span className="ml-1 text-xs font-semibold text-[var(--kp-text-3)]">tokens</span>
-                </p>
-                <p className="mt-1 text-[10px] leading-relaxed text-[var(--kp-text-3)]">
-                  prompt {formatTokens(view.tokens.prompt)} · completion{" "}
-                  {formatTokens(view.tokens.completion)}
-                  {view.tokens.runCount > 0
-                    ? ` · ${view.tokens.runCount} 次 Run`
-                    : view.tokens.messageCount > 0
-                      ? ` · ${view.tokens.messageCount} 条消息`
-                      : null}
-                </p>
-              </>
-            ) : (
-              <p className="mt-0.5 text-[11px] text-[var(--kp-text-3)]">暂无 token 记录</p>
-            )}
+            <div
+              aria-hidden
+              className="pointer-events-none absolute -right-6 -top-8 h-24 w-24 rounded-full bg-white/25 blur-2xl"
+            />
+            <div
+              aria-hidden
+              className="pointer-events-none absolute inset-0 opacity-20"
+              style={{
+                backgroundImage:
+                  "linear-gradient(rgba(255,255,255,0.4) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.4) 1px, transparent 1px)",
+                backgroundSize: "14px 14px",
+                maskImage: "radial-gradient(ellipse at 80% 0%, black, transparent 70%)",
+              }}
+            />
+            <div className="relative">
+              <p className="text-[10px] font-semibold tracking-wide text-white/80">
+                {"{"} Token {"}"}
+              </p>
+              {view.tokens.total > 0 ? (
+                <>
+                  <p className="mt-0.5 text-xl font-black tabular-nums text-white">
+                    {formatTokens(view.tokens.total)}
+                    <span className="ml-1 text-xs font-semibold text-white/75">tokens</span>
+                  </p>
+                  <p className="mt-1.5 text-[10px] leading-relaxed text-white/80">
+                    prompt {formatTokens(view.tokens.prompt)} · completion{" "}
+                    {formatTokens(view.tokens.completion)}
+                  </p>
+                  {(view.tokens.runCount > 0 || view.tokens.messageCount > 0) && (
+                    <p className="mt-2 inline-flex rounded-full bg-black/15 px-2 py-0.5 text-[10px] font-semibold text-white/90">
+                      {view.tokens.runCount > 0
+                        ? `${view.tokens.runCount} 次 Run`
+                        : `${view.tokens.messageCount} 条消息`}
+                    </p>
+                  )}
+                </>
+              ) : (
+                <p className="mt-0.5 text-[11px] text-white/75">暂无 token 记录</p>
+              )}
+            </div>
           </div>
         </div>
       )}
@@ -342,8 +365,9 @@ export function ArticleUpdateCalendar({ data }: { data: ActivityCalendarData | n
                                   className={cn(
                                     "h-[11px] w-[11px] rounded-[2px] transition-[transform,box-shadow] duration-150",
                                     future ? "bg-transparent" : LEVEL_CLASS[level],
-                                    !future && "hover:scale-125 hover:ring-1 hover:ring-[var(--kp-brand)]/40",
-                                    isSelected && "ring-2 ring-[var(--kp-brand)] ring-offset-1 ring-offset-white/80",
+                                    !future && "hover:scale-125",
+                                    // 选中：轻描边 + 外发光，不用 ring-offset 白底（会像「白框」）
+                                    isSelected && "z-[1] scale-125 shadow-[0_0_0_1.5px_var(--kp-brand),0_0_8px_rgba(0,135,235,0.45)]",
                                   )}
                                   onMouseEnter={(e) => {
                                     if (future) return;
