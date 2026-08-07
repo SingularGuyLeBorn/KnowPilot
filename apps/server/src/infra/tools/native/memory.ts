@@ -12,12 +12,15 @@ import {
   memoryWorkspaceScope,
   type MemoryUserCreatableType,
 } from "@knowpilot/shared";
+import fs from "fs";
+import path from "path";
 import type { PostEntity } from "../../entityServices/postService.js";
 import { createMemoryRepository, resolveMemoryWriteScope } from "../../memoryRepository.js";
 import { readPinnedFile, writePinnedFile, type PinnedWhich } from "../../pinnedMemory.js";
 import { appendDailyNote, searchDailyNotes } from "../../memoryDaily.js";
 import { z } from "zod";
 import { zodParams } from "./zodParams.js";
+import type { AppConfig } from "../../config.js";
 import type { ToolRollback } from "../types.js";
 import type { NativeToolContext, NativeToolDefinition, NativeToolHandler } from "./types.js";
 import { registerNativeDomain } from "./registerDomain.js";
@@ -38,18 +41,34 @@ async function gardenCreateTool(args: Record<string, unknown>, ctx: NativeToolCo
   const title = String(args.title || "").trim();
   if (!id) throw new Error("id 不能为空");
   if (!title) throw new Error("title 不能为空");
+  const templateId = String(args.template || "").trim();
+  let homeContent: string | null = null;
+  if (templateId) {
+    homeContent = loadGardenTemplate(ctx.config, templateId, title);
+  }
   const result = await ctx.services.garden.create({
     id,
     title,
     description: args.description != null ? String(args.description) : null,
-    homeContent: args.homeContent != null ? String(args.homeContent) : `# ${title}\n`,
+    homeContent: homeContent ?? (args.homeContent != null ? String(args.homeContent) : `# ${title}\n`),
   });
   if (!result.success) throw new Error(result.error?.message || "创建花园失败");
   return {
     id: result.data!.id,
     title: result.data!.title,
     path: `content/${result.data!.id}/_garden.md`,
+    template: templateId || undefined,
   };
+}
+
+/** 读取内置花园模板；未找到返回 null，调用方回退默认首页。 */
+function loadGardenTemplate(config: AppConfig, templateId: string, title: string): string | null {
+  if (templateId !== "knowledge") return null;
+  const filePath = path.join(config.projectRoot, "docs/templates/knowledge-garden.md");
+  if (!fs.existsSync(filePath)) return null;
+  const raw = fs.readFileSync(filePath, "utf-8").replace(/^\uFEFF/, "");
+  // 替换标题占位符；frontmatter 的 title 会在 GardenService 写文件时被 entity.title 覆盖
+  return raw.replace(/^# 主题知识库\b/m, `# ${title}`);
 }
 
 async function gardenListTool(args: Record<string, unknown>, ctx: NativeToolContext) {
@@ -307,6 +326,7 @@ async function memoryCreateTool(args: Record<string, unknown>, ctx: NativeToolCo
         type: rawType,
         scope: "global",
         ...(Array.isArray(args.keywords) ? { keywords: args.keywords.map(String) } : {}),
+        ...(Array.isArray(args.tags) ? { tags: args.tags.map(String) } : {}),
       },
       approvalId,
     );
@@ -327,6 +347,7 @@ async function memoryCreateTool(args: Record<string, unknown>, ctx: NativeToolCo
     scope,
     strength: Number.isFinite(strength) ? Math.min(1, Math.max(0, strength)) : 1,
     keywords: Array.isArray(args.keywords) ? args.keywords.map(String) : [],
+    tags: Array.isArray(args.tags) ? args.tags.map(String) : [],
     attribution,
     validTo,
   });
@@ -335,6 +356,7 @@ async function memoryCreateTool(args: Record<string, unknown>, ctx: NativeToolCo
     type: memory.type,
     strength: memory.strength,
     keywords: memory.keywords,
+    tags: memory.tags,
     scope: memory.scope,
     attribution: memory.attribution,
   };
@@ -401,6 +423,7 @@ async function memorySearchTool(args: Record<string, unknown>, ctx: NativeToolCo
       type: m.type,
       strength: m.strength,
       keywords: m.keywords,
+      tags: m.tags,
     })),
   };
 }
@@ -437,6 +460,7 @@ async function memoryUpdateTool(args: Record<string, unknown>, ctx: NativeToolCo
     type: rawType,
     strength: strength !== undefined && Number.isFinite(strength) ? strength : undefined,
     keywords: Array.isArray(args.keywords) ? args.keywords.map(String) : undefined,
+    tags: Array.isArray(args.tags) ? args.tags.map(String) : undefined,
     actor: {
       agentId: ctx.agentSnapshot?.id,
       workspaceId: ctx.agentSnapshot?.workspaceId,
@@ -449,6 +473,7 @@ async function memoryUpdateTool(args: Record<string, unknown>, ctx: NativeToolCo
     type: memory.type,
     strength: memory.strength,
     keywords: memory.keywords,
+    tags: memory.tags,
     scope: memory.scope,
     superseded: previousId !== memory.id,
   };
@@ -469,13 +494,14 @@ const MEMORY_DEFS: NativeToolDefinition[] = [
     destructive: true,
     approvalExempt: true,
     description:
-      "新建知识库花园（第 N 座库）。id=目录名（小写 [a-z0-9_-]）；落盘 content/{id}/_garden.md（title/description + 首页正文）。建库后才能 post_create 往该库写文章。禁止 write_file 直写 content/。",
+      "新建知识库花园（第 N 座库）。id=目录名（小写 [a-z0-9_-]）；落盘 content/{id}/_garden.md（title/description + 首页正文）。可用 template='knowledge' 按知识库模板规范初始化。建库后才能 post_create 往该库写文章。禁止 write_file 直写 content/。",
     parameters: zodParams(
       z.object({
         id: z.string().describe("花园 id（目录名），如 research-notes"),
         title: z.string().describe("显示标题"),
         description: z.string().describe("一句话说明").optional(),
-        homeContent: z.string().describe("首页 Markdown 正文").optional(),
+        homeContent: z.string().describe("首页 Markdown 正文；与 template 二选一").optional(),
+        template: z.enum(["knowledge"]).describe("使用模板快速初始化；knowledge=按知识库模板规范生成").optional(),
       }),
     ),
   },
@@ -619,6 +645,10 @@ const MEMORY_DEFS: NativeToolDefinition[] = [
           .optional(),
         strength: z.number().describe("强度 0-1，默认 1").optional(),
         keywords: z.array(z.string()).describe("检索关键词").optional(),
+        tags: z
+          .array(z.string())
+          .describe("组织标签（与 Skill/Post 统一，如「非常有用」；不同于 keywords）")
+          .optional(),
         scope: z
           .enum(["agent", "workspace", "global"])
           .describe("可见范围：agent=仅自己（默认）；workspace=同 Workspace 共享；global=全局（仅超级 Agent）")
@@ -652,6 +682,7 @@ const MEMORY_DEFS: NativeToolDefinition[] = [
           .optional(),
         strength: z.number().describe("强度 0-1（不填则继承）").optional(),
         keywords: z.array(z.string()).describe("检索关键词（不填则继承）").optional(),
+        tags: z.array(z.string()).describe("组织标签（不填则继承）").optional(),
       }),
     ),
   },

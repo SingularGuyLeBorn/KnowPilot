@@ -28,6 +28,7 @@ import {
   markSkillArchived,
 } from "../../skillUsage.js";
 import { scanSkillPackage } from "../../skillScan.js";
+import { compareByHighValueTags, hasHighValueTag, parseTags } from "@knowpilot/shared";
 
 function skillsRoot(ctx: NativeToolContext): string {
   return ctx.config.configPaths.skills;
@@ -43,18 +44,30 @@ function parseMeta(metaJson?: string | null): Record<string, unknown> {
 }
 
 async function skillsListTool(args: Record<string, unknown>, ctx: NativeToolContext) {
-  const keyword = args.keyword ? String(args.keyword).toLowerCase() : "";
+  const keyword = args.keyword ? String(args.keyword) : "";
+  const tag = args.tag ? String(args.tag).trim() : "";
   const includeDisabled = args.includeDisabled === true;
   const list = await ctx.services.skill.list({
     page: 1,
     pageSize: 200,
     enabled: includeDisabled ? undefined : true,
     keyword: keyword || undefined,
+    tag: tag || undefined,
   });
+  type Row = {
+    name: string;
+    description: string;
+    trigger: string | null;
+    kind: string;
+    enabled: boolean;
+    tags: string[];
+    useful: boolean;
+  };
   const skills = list.items
-    .map((s) => {
+    .map((s): Row | null => {
       const kind = parseSkillKind(s.metaJson, "executable");
       if (kind === "reference") return null;
+      const tags = Array.isArray(s.tags) ? s.tags : parseTags(s.tags);
       const desc = truncateSkillDescription(s.description || "", 60);
       return {
         name: s.name,
@@ -62,13 +75,16 @@ async function skillsListTool(args: Record<string, unknown>, ctx: NativeToolCont
         trigger: s.trigger,
         kind,
         enabled: s.enabled,
+        tags,
+        useful: hasHighValueTag(tags),
       };
     })
-    .filter(Boolean);
+    .filter((x): x is Row => x != null)
+    .sort((a, b) => compareByHighValueTags(a, b, (x) => x.tags, (x) => x.name));
   return {
     count: skills.length,
     skills,
-    hint: "需要全文时用 skill_view(name)；程序记忆用 skill_manage 维护。procedural 技能不注册为 skill__* 工具。",
+    hint: "带 tags「非常有用/必装」的 Skill 优先考虑。可用 tag 参数筛选。需要全文时用 skill_view(name)；程序记忆用 skill_manage 维护。",
   };
 }
 
@@ -100,6 +116,7 @@ async function skillViewTool(args: Record<string, unknown>, ctx: NativeToolConte
 
   bumpSkillView(skill.name, root);
   const linked = kind === "procedural" ? listSkillLinkedFiles(root, skill.name) : undefined;
+  const tags = Array.isArray(skill.tags) ? skill.tags : parseTags(skill.tags);
   return {
     name: skill.name,
     id: skill.id,
@@ -107,6 +124,8 @@ async function skillViewTool(args: Record<string, unknown>, ctx: NativeToolConte
     trigger: skill.trigger,
     kind,
     enabled: skill.enabled,
+    tags,
+    useful: hasHighValueTag(tags),
     content: skill.code,
     linked_files: linked,
     hint: linked
@@ -142,6 +161,26 @@ function splitSkillMd(raw: string): { frontmatter: string; body: string; full: s
   return { frontmatter: m[1]!, body: m[2]!, full: raw };
 }
 
+/** 从 SKILL.md frontmatter 解析 tags（YAML 列表或逗号串） */
+function parseTagsFromSkillMd(fullMd: string): string[] {
+  const { frontmatter } = splitSkillMd(fullMd);
+  if (!frontmatter) return [];
+  const block = frontmatter.match(/^tags:\s*\n((?:[ \t]*-[ \t]*.+\n?)*)/m);
+  if (block?.[1]) {
+    return parseTags(
+      block[1]
+        .split("\n")
+        .map((line) => line.replace(/^\s*-\s*/, "").replace(/^["']|["']$/g, "").trim())
+        .filter(Boolean),
+    );
+  }
+  const inline = frontmatter.match(/^tags:\s*\[([^\]]*)\]\s*$/m);
+  if (inline?.[1]) return parseTags(inline[1]);
+  const csv = frontmatter.match(/^tags:\s*["']?(.+?)["']?\s*$/m);
+  if (csv?.[1] && !csv[1].startsWith("-") && csv[1] !== "[]") return parseTags(csv[1]);
+  return [];
+}
+
 async function upsertProceduralSkill(
   ctx: NativeToolContext,
   name: string,
@@ -153,6 +192,7 @@ async function upsertProceduralSkill(
   const { body } = splitSkillMd(fullMd);
   const descMatch = fullMd.match(/^description:\s*["']?(.+?)["']?\s*$/m);
   const description = truncateSkillDescription(descMatch?.[1] || safe, 60);
+  const tags = parseTagsFromSkillMd(fullMd);
   const root = skillsRoot(ctx);
   const dir = skillPackageDir(root, safe);
   fs.mkdirSync(dir, { recursive: true });
@@ -178,6 +218,7 @@ async function upsertProceduralSkill(
       description,
       code: splitSkillMd(content).body.trim(),
       enabled: true,
+      tags,
       metaJson,
     } as never);
     if (!updated.success) return { error: updated.error?.message ?? "更新失败" };
@@ -190,6 +231,7 @@ async function upsertProceduralSkill(
     code: splitSkillMd(content).body.trim(),
     icon: "Sparkles",
     enabled: true,
+    tags,
     metaJson,
   } as never);
   if (!created.success || !created.data) {
@@ -299,9 +341,14 @@ async function skillManageTool(args: Record<string, unknown>, ctx: NativeToolCon
       await ctx.services.skill.update({
         id: skill.id,
         code: splitSkillMd(full).body.trim(),
+        tags: parseTagsFromSkillMd(full),
       } as never);
     } else {
-      await ctx.services.skill.update({ id: skill.id, code: next } as never);
+      await ctx.services.skill.update({
+        id: skill.id,
+        code: next,
+        ...(next.startsWith("---") ? { tags: parseTagsFromSkillMd(next) } : {}),
+      } as never);
     }
     bumpSkillPatch(name, root);
     return { success: true, name, message: "SKILL.md 已 patch。" };
@@ -381,10 +428,11 @@ const SKILLS_DEFS: NativeToolDefinition[] = [
   {
     name: "skills_list",
     description:
-      "列出可用 Skill 元数据（渐进披露第 1 层）。只返回 name/短 description/kind，不含全文。需要正文时用 skill_view。",
+      "列出可用 Skill 元数据（渐进披露第 1 层）。返回 name/短 description/kind/tags；「非常有用」「必装」优先。需要正文时用 skill_view。",
     parameters: zodParams(
       z.object({
         keyword: z.string().describe("可选关键词过滤").optional(),
+        tag: z.string().describe("按统一标签筛选，如「非常有用」").optional(),
         includeDisabled: z.boolean().describe("是否包含未启用").optional(),
       }),
     ),

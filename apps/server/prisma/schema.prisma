@@ -124,7 +124,9 @@ model Skill {
   icon        String?
   trigger     String?  /// 触发规则 (关键字或正则)
   enabled     Boolean  @default(true)
-  metaJson    String?  /// frontmatter 扩展：model, context, allowedTools, kind
+  /// 统一组织标签（CSV）；与 Post/Prompt/Memory.tags 同约定，含「非常有用」「必装」
+  tags        String   @default("")
+  metaJson    String?  /// frontmatter 扩展：model, context, allowedTools, kind, version, source（不含 tags）
   sourceSlug  String?  @unique /// 本地源文件 slug（用于增量同步与清理）
   sourceMtime DateTime?        /// 本地源文件最后修改时间（用于增量同步）
   createdAt   DateTime @default(now())
@@ -307,7 +309,9 @@ model Memory {
   content   String
   type      String   @default("episodic") /// "episodic" | "semantic"
   strength  Float    @default(1.0)
-  keywords    String   @default("") /// 逗号分隔的关键字
+  keywords    String   @default("") /// 检索关键字（CSV）；与 tags 分工：keywords=找得到，tags=组织/优先级
+  /// 统一组织标签（CSV）；与 Skill/Post 同约定
+  tags        String   @default("")
   scope       String   @default("global") /// "global" | "agent:{agentId}" | "workspace:{workspaceId}"（W5 写时隔离，替代读时过滤）
   agentId     String?  /// scope=agent:{id} 时的冗余列，便于按 Agent 查询
   contentHash String?  /// 内容全量 sha256（W5 去重，替代 slice(0,40) 前缀匹配）

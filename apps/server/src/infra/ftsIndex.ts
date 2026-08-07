@@ -94,14 +94,46 @@ export async function rebuildFtsIndex(prisma: PrismaClient): Promise<number> {
   });
   for (const a of agents) add("agent", a.id, a.name, `${a.description ?? ""}\n${a.systemPrompt ?? ""}`);
 
-  const skills = await prisma.skill.findMany({ select: { id: true, name: true, description: true, code: true } });
-  for (const s of skills) add("skill", s.id, s.name, `${s.description}\n${s.code}`);
+  const skills = await prisma.skill.findMany({
+    select: { id: true, name: true, description: true, code: true, tags: true },
+  });
+  for (const s of skills) {
+    const tags = s.tags
+      ? s.tags
+          .split(",")
+          .map((t) => t.trim())
+          .filter(Boolean)
+          .join(" ")
+      : "";
+    add("skill", s.id, s.name, `${s.description}\n${tags ? `tags:${tags}` : ""}\n${s.code}`);
+  }
 
   const memories = await prisma.memory.findMany({
     where: { status: { not: "superseded" } },
-    select: { id: true, content: true, type: true },
+    select: { id: true, content: true, type: true, keywords: true, tags: true },
   });
-  for (const m of memories) add("memory", m.id, m.type, m.content);
+  for (const m of memories) {
+    const kw = m.keywords
+      ? m.keywords
+          .split(",")
+          .map((t) => t.trim())
+          .filter(Boolean)
+          .join(" ")
+      : "";
+    const tags = m.tags
+      ? m.tags
+          .split(",")
+          .map((t) => t.trim())
+          .filter(Boolean)
+          .join(" ")
+      : "";
+    add(
+      "memory",
+      m.id,
+      m.type,
+      [m.content, kw ? `keywords:${kw}` : "", tags ? `tags:${tags}` : ""].filter(Boolean).join("\n"),
+    );
+  }
 
   const tasks = await prisma.task.findMany({ select: { id: true, name: true, cronExpression: true } });
   for (const t of tasks) add("task", t.id, t.name, t.cronExpression ?? "");
@@ -110,9 +142,23 @@ export async function rebuildFtsIndex(prisma: PrismaClient): Promise<number> {
   for (const m of mcps) add("mcp", m.id, m.name, m.command);
 
   const prompts = await prisma.prompt.findMany({
-    select: { id: true, name: true, description: true, content: true },
+    select: { id: true, name: true, description: true, content: true, tags: true },
   });
-  for (const p of prompts) add("prompt", p.id, p.name, `${p.description ?? ""}\n${p.content ?? ""}`);
+  for (const p of prompts) {
+    const tags = p.tags
+      ? p.tags
+          .split(",")
+          .map((t) => t.trim())
+          .filter(Boolean)
+          .join(" ")
+      : "";
+    add(
+      "prompt",
+      p.id,
+      p.name,
+      `${p.description ?? ""}\n${tags ? `tags:${tags}` : ""}\n${p.content ?? ""}`,
+    );
+  }
 
   const inboxItems = await prisma.inboxItem.findMany({
     select: {

@@ -7,6 +7,7 @@ import type {
   UpdateSkillInput,
   ListSkillsInput,
 } from "@knowpilot/shared";
+import { canonicalListTag, formatTagsCsv, tagsForFts, tagsFromCsv } from "@knowpilot/shared";
 import { FileSyncService } from "../../services.js";
 import { parseSkillKind, skillFileSlug } from "../skillPackage.js";
 
@@ -19,9 +20,15 @@ export interface SkillEntity {
   icon: string | null;
   trigger: string | null;
   enabled: boolean;
+  tags: string[];
   metaJson: string | null;
   createdAt: Date;
   updatedAt: Date;
+}
+
+function ftsBody(entity: { description: string; code: string; tags: string[] }): string {
+  const tagPart = tagsForFts(entity.tags);
+  return [entity.description, tagPart, entity.code].filter(Boolean).join("\n");
 }
 
 export class SkillService extends FileSyncService<CreateSkillInput, UpdateSkillInput, ListSkillsInput, SkillEntity> {
@@ -30,21 +37,39 @@ export class SkillService extends FileSyncService<CreateSkillInput, UpdateSkillI
   readonly fileExtension = ".md";
 
   protected get delegate() { return this.prisma.skill; }
-  protected formatEntity(raw: any): SkillEntity { return raw; }
+
+  protected formatEntity(raw: any): SkillEntity {
+    return {
+      ...raw,
+      tags: tagsFromCsv(raw.tags),
+    };
+  }
 
   protected buildListWhere(input: ListSkillsInput): any {
     const where: any = {};
     if (input.enabled !== undefined) where.enabled = input.enabled;
+    const tag = canonicalListTag(input.tag);
+    if (tag) where.tags = { contains: tag };
     if (input.keyword) {
-      where.OR = [{ name: { contains: input.keyword } }, { description: { contains: input.keyword } }];
+      where.OR = [
+        { name: { contains: input.keyword } },
+        { description: { contains: input.keyword } },
+        { tags: { contains: input.keyword } },
+      ];
     }
     return where;
   }
 
-  protected buildCreateData(input: CreateSkillInput): any { return input; }
+  protected buildCreateData(input: CreateSkillInput): any {
+    const { tags, ...rest } = input;
+    return { ...rest, tags: formatTagsCsv(tags ?? []) };
+  }
+
   protected buildUpdateData(input: UpdateSkillInput): any {
-    const { id: _id, ...data } = input;
-    return data;
+    const { id: _id, tags, ...data } = input;
+    const updateData: any = { ...data };
+    if (tags !== undefined) updateData.tags = formatTagsCsv(tags);
+    return updateData;
   }
 
   private skillKindOf(entity: SkillEntity): "procedural" | "executable" | "reference" {
@@ -69,6 +94,17 @@ export class SkillService extends FileSyncService<CreateSkillInput, UpdateSkillI
       `enabled: ${entity.enabled}`,
       `kind: ${kind}`,
     ];
+    if (entity.tags?.length) {
+      lines.push(`tags:\n${entity.tags.map((t) => `  - "${t.replace(/"/g, '\\"')}"`).join("\n")}`);
+    } else {
+      lines.push(`tags: []`);
+    }
+    if (typeof meta.version === "string" && meta.version.trim()) {
+      lines.push(`version: "${meta.version.trim()}"`);
+    }
+    if (typeof meta.source === "string" && meta.source.trim()) {
+      lines.push(`source: "${String(meta.source).replace(/"/g, '\\"')}"`);
+    }
     if (meta.model) lines.push(`model: "${meta.model}"`);
     if (meta.context) lines.push(`context: ${meta.context}`);
     if (Array.isArray(meta.allowedTools) && meta.allowedTools.length) {
@@ -85,13 +121,12 @@ export class SkillService extends FileSyncService<CreateSkillInput, UpdateSkillI
   // P11：FTS 增量
   protected override async afterCreate(entity: SkillEntity, input: CreateSkillInput): Promise<void> {
     await super.afterCreate(entity, input);
-    await this.syncFts("skill", entity.id, entity.name, `${entity.description}\n${entity.code}`);
-    // A9：通知 agentSchemaCache 失效
+    await this.syncFts("skill", entity.id, entity.name, ftsBody(entity));
     this.eventBus.emit("skill.created", entity);
   }
   protected override async afterUpdate(entity: SkillEntity, existing: any, input: UpdateSkillInput): Promise<void> {
     await super.afterUpdate(entity, existing, input);
-    await this.syncFts("skill", entity.id, entity.name, `${entity.description}\n${entity.code}`);
+    await this.syncFts("skill", entity.id, entity.name, ftsBody(entity));
     this.eventBus.emit("skill.updated", entity);
   }
   protected override async afterDelete(existing: any): Promise<void> {

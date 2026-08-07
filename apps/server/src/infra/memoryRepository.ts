@@ -47,6 +47,7 @@ export interface MemoryItem {
   type: string;
   strength: number;
   keywords: string[];
+  tags: string[];
   scope: string;
   agentId: string | null;
   attribution: string;
@@ -61,8 +62,10 @@ export interface MemoryItem {
 export interface MemoryReadQuery {
   keyword?: string;
   types?: string[];
-  /** 必填：读方必须显式声明可见 scope（写时隔离的配套约束） */
-  scopes: string[];
+  /** 读方声明可见 scope；按 ids 直取时可省略 */
+  scopes?: string[];
+  /** 按 id 列表直取（忽略 keyword；仍受 status/type/validity 过滤） */
+  ids?: string[];
   limit?: number;
 }
 
@@ -79,6 +82,7 @@ export interface MemoryWriteInput {
   scope: string;
   strength?: number;
   keywords?: string[];
+  tags?: string[];
   sourceSlug?: string;
   /** user | agent | flush | experience | system */
   attribution?: string;
@@ -93,6 +97,7 @@ export interface MemorySupersedeUpdateInput {
   type?: string;
   strength?: number;
   keywords?: string[];
+  tags?: string[];
   /** 调用方身份：用于校验不得改他 Agent / 他 Workspace 的记忆 */
   actor: MemoryScopeActor;
 }
@@ -134,6 +139,14 @@ function recencyScore(updatedAt: Date, nowMs: number): number {
   return 1 / (1 + ageDays);
 }
 
+function csvOrArray(raw: string | string[] | null | undefined): string[] {
+  if (Array.isArray(raw)) return raw.map(String).map((t) => t.trim()).filter(Boolean);
+  if (typeof raw === "string" && raw.trim()) {
+    return raw.split(",").map((t) => t.trim()).filter(Boolean);
+  }
+  return [];
+}
+
 function toItem(raw: {
   id: string;
   content: string;
@@ -141,6 +154,7 @@ function toItem(raw: {
   strength: number;
   /** Prisma 原始行是逗号分隔字符串；MemoryService.formatEntity 后是数组，本函数两种入参形态都接受 */
   keywords: string | string[];
+  tags?: string | string[] | null;
   scope: string;
   agentId: string | null;
   attribution?: string | null;
@@ -151,17 +165,13 @@ function toItem(raw: {
   createdAt: Date;
   updatedAt: Date;
 }): MemoryItem {
-  const keywords = Array.isArray(raw.keywords)
-    ? raw.keywords
-    : raw.keywords
-      ? raw.keywords.split(",").filter(Boolean).map((k) => k.trim())
-      : [];
   return {
     id: raw.id,
     content: raw.content,
     type: raw.type,
     strength: raw.strength,
-    keywords,
+    keywords: csvOrArray(raw.keywords),
+    tags: csvOrArray(raw.tags),
     scope: raw.scope,
     agentId: raw.agentId,
     attribution: raw.attribution ?? "agent",
@@ -201,7 +211,7 @@ export class PrismaMemoryRepository implements MemoryRepository {
 
   async read(query: MemoryReadQuery): Promise<MemoryItem[]> {
     const limit = Math.max(1, Math.min(100, query.limit ?? 8));
-    const scopes = query.scopes.length > 0 ? query.scopes : [MEMORY_SCOPE_GLOBAL];
+    const scopes = query.scopes && query.scopes.length > 0 ? query.scopes : [MEMORY_SCOPE_GLOBAL];
     const typeFilter = query.types && query.types.length > 0 ? { type: { in: query.types } } : {};
     // 软版本链：默认只注入 / 检索 active，不把 superseded 旧版灌进 prompt
     const statusFilter = { status: MEMORY_STATUS_ACTIVE };
@@ -210,6 +220,26 @@ export class PrismaMemoryRepository implements MemoryRepository {
     const validityFilter = {
       OR: [{ validTo: null }, { validTo: { gt: now } }],
     };
+
+    // 路径 0：按 id 直取（选取器 round 2；忽略 keyword）
+    if (query.ids && query.ids.length > 0) {
+      const idRows = await this.prisma.memory.findMany({
+        where: {
+          id: { in: query.ids },
+          ...(query.scopes && query.scopes.length > 0 ? { scope: { in: query.scopes } } : {}),
+          ...typeFilter,
+          ...statusFilter,
+          ...validityFilter,
+        },
+      });
+      const byId = new Map(idRows.map((r) => [r.id, toItem(r as Parameters<typeof toItem>[0])]));
+      const ordered: MemoryItem[] = [];
+      for (const id of query.ids) {
+        const item = byId.get(id);
+        if (item) ordered.push(item);
+      }
+      return ordered.slice(0, limit);
+    }
 
     let rows: any[] = [];
     const rankById = new Map<string, number>();
@@ -345,6 +375,7 @@ export class PrismaMemoryRepository implements MemoryRepository {
       type: input.type,
       strength: input.strength ?? MEMORY_INITIAL_STRENGTH,
       keywords: input.keywords ?? [],
+      tags: input.tags ?? [],
       // 以下字段不在 tRPC createMemorySchema 内，由 MemoryService.buildCreateData 透传
       scope,
       agentId,
@@ -373,6 +404,7 @@ export class PrismaMemoryRepository implements MemoryRepository {
         type: createInput.type,
         strength: createInput.strength,
         keywords: createInput.keywords.join(","),
+        tags: createInput.tags.join(","),
         scope,
         agentId,
         contentHash,
@@ -402,6 +434,7 @@ export class PrismaMemoryRepository implements MemoryRepository {
 
     const type = input.type?.trim() || head.type;
     const keywords = input.keywords ?? head.keywords;
+    const tags = input.tags ?? head.tags;
     const strength =
       input.strength !== undefined && Number.isFinite(input.strength)
         ? Math.min(1, Math.max(0, input.strength))
@@ -413,7 +446,14 @@ export class PrismaMemoryRepository implements MemoryRepository {
       where: { scope: head.scope, contentHash, status: MEMORY_STATUS_ACTIVE },
     });
     if (same && same.id === head.id) {
-      const refreshed = await this.write({ content, type, scope: head.scope, strength, keywords });
+      const refreshed = await this.write({
+        content,
+        type,
+        scope: head.scope,
+        strength,
+        keywords,
+        tags,
+      });
       return { previousId: head.id, memory: refreshed };
     }
     if (same && same.id !== head.id) {
@@ -441,6 +481,7 @@ export class PrismaMemoryRepository implements MemoryRepository {
       type,
       strength,
       keywords,
+      tags,
       scope: head.scope,
       agentId,
       status: MEMORY_STATUS_ACTIVE,
@@ -470,6 +511,7 @@ export class PrismaMemoryRepository implements MemoryRepository {
             type,
             strength,
             keywords: keywords.join(","),
+            tags: tags.join(","),
             scope: head.scope,
             agentId,
             contentHash,

@@ -18,6 +18,7 @@ import type { LlmMessage, LlmToolCall } from "../infra/llmClient.js";
 import type { ServiceContainer } from "../infra/serviceContainer.js";
 import { listNativeTools } from "../infra/nativeTools.js";
 import { recoverStaleRuns } from "../infra/asyncJobManager.js";
+import * as uiStateNotify from "../infra/uiStateNotify.js";
 import { appRouter } from "../router.js";
 import { createContextInner } from "../trpc/context.js";
 import { createTempProjectDir, createTestConfig } from "./helpers/toolTestFixtures.js";
@@ -89,7 +90,13 @@ describe("W11 Run 活状态 + awaiting_human", () => {
     const caller = appRouter.createCaller(ctx);
 
     const stamp = Date.now();
-    const mem = await services.memory.create({ content: `w11-mem-${stamp}`, type: "note", strength: 0.5, keywords: [] });
+    const mem = await services.memory.create({
+      content: `w11-mem-${stamp}`,
+      type: "note",
+      strength: 0.5,
+      keywords: [],
+      tags: [],
+    });
     const memoryId = (mem.data as { id: string }).id;
     const agent = await services.agent.create({
       name: `w11-agent-${stamp}`,
@@ -144,70 +151,94 @@ describe("W11 Run 活状态 + awaiting_human", () => {
   }
 
   it("审批 pending → 挂起（phase=awaiting_human）→ approve → 同 session 续跑完成", async () => {
-    const s = await setupPendingApprovalScenario();
-
-    // run 挂起点（若 loop 未挂起就结束，race 立刻报错而非干等）
-    await Promise.race([
-      s.awaitingReached,
-      s.loopPromise.then(
-        () => {
-          throw new Error("loop 未进入 awaiting_human 就结束了");
-        },
-        (e) => {
-          throw e;
-        },
-      ),
-    ]);
-
-    // 挂起态可查：Run 行 status=running 且 output.phase=awaiting_human
-    const runningRun = await s.ctx.prisma.run.findFirst({
-      where: { status: "running" },
-      orderBy: { createdAt: "desc" },
+    const pushed: Array<{ type: string; phase?: string; status?: string; blockedScopes?: string[] }> = [];
+    const notifySpy = vi.spyOn(uiStateNotify, "notifyAllMainSessionsUi").mockImplementation(async (_prisma, ev) => {
+      pushed.push(ev as { type: string; phase?: string; status?: string; blockedScopes?: string[] });
     });
-    expect(runningRun).toBeTruthy();
-    expect((runningRun!.output as { phase: string }).phase).toBe("awaiting_human");
-    expect(s.phases).toContain("tool_batch->awaiting_human");
-    // 审批前操作未执行
-    expect(await s.services.memory.getById(s.memoryId)).toBeTruthy();
+    const pushSpy = vi.spyOn(uiStateNotify, "pushUiStateToSession").mockImplementation((_sid, ev) => {
+      pushed.push(ev as { type: string; phase?: string; status?: string; blockedScopes?: string[] });
+    });
 
-    // 人工批准并执行 → approval_resolved 显式事件唤醒
-    const pendings = await s.services.approval.list({ page: 1, pageSize: 20, status: "pending" });
-    const record = pendings.items.find(
-      (i: { toolName: string; args: { id?: string } }) => i.toolName === "memory_delete" && i.args?.id === s.memoryId,
-    );
-    expect(record).toBeDefined();
-    const executed = await s.caller.approval.approveAndExecute({ id: record!.id });
-    expect(executed.success).toBe(true);
+    try {
+      const s = await setupPendingApprovalScenario();
 
-    const result = await s.loopPromise;
-    expect(result.content).toBe("收尾完成");
-    expect(result.runId).toBeDefined();
-    // 合法转移链：awaiting_human → llm → done
-    expect(s.phases).toContain("awaiting_human->llm");
-    expect(s.phases[s.phases.length - 1]).toBe("llm->done");
+      // run 挂起点（若 loop 未挂起就结束，race 立刻报错而非干等）
+      await Promise.race([
+        s.awaitingReached,
+        s.loopPromise.then(
+          () => {
+            throw new Error("loop 未进入 awaiting_human 就结束了");
+          },
+          (e) => {
+            throw e;
+          },
+        ),
+      ]);
 
-    // 操作已由审批流程真实执行
-    await expect(s.services.memory.getById(s.memoryId)).rejects.toThrow();
+      // 挂起态可查：Run 行 status=running 且 output.phase=awaiting_human
+      const runningRun = await s.ctx.prisma.run.findFirst({
+        where: { status: "running" },
+        orderBy: { createdAt: "desc" },
+      });
+      expect(runningRun).toBeTruthy();
+      expect((runningRun!.output as { phase: string }).phase).toBe("awaiting_human");
+      expect(s.phases).toContain("tool_batch->awaiting_human");
+      // 审批前操作未执行
+      expect(await s.services.memory.getById(s.memoryId)).toBeTruthy();
 
-    // Run 终态：success + output.phase=done
-    const finalRun = await s.ctx.prisma.run.findUnique({ where: { id: result.runId! } });
-    expect(finalRun!.status).toBe("success");
-    expect((finalRun!.output as { phase: string }).phase).toBe("done");
+      // PUSH：进入 awaiting_human 即刻推送 run_updated
+      const awaitPush = pushed.find((e) => e.type === "run_updated" && e.phase === "awaiting_human");
+      expect(awaitPush).toBeDefined();
+      expect(awaitPush!.status).toBe("running");
+      expect(Array.isArray(awaitPush!.blockedScopes)).toBe(true);
 
-    // 第二轮 LLM 收到续跑注入消息（含执行结果）
-    const second = s.calls[1];
-    const resumeMsg = second.find(
-      (m) => m.role === "user" && typeof m.content === "string" && m.content.includes("人工审批已通过"),
-    );
-    expect(resumeMsg).toBeDefined();
+      // 人工批准并执行 → approval_resolved 显式事件唤醒
+      const pendings = await s.services.approval.list({ page: 1, pageSize: 20, status: "pending" });
+      const record = pendings.items.find(
+        (i: { toolName: string; args: { id?: string } }) => i.toolName === "memory_delete" && i.args?.id === s.memoryId,
+      );
+      expect(record).toBeDefined();
+      const executed = await s.caller.approval.approveAndExecute({ id: record!.id });
+      expect(executed.success).toBe(true);
 
-    // 同 session 注入落库（前端 message_upserted 路径）
-    const msgs = await s.services.message.list({ sessionId: s.sessionId, page: 1, pageSize: 50 });
-    expect(
-      msgs.items.some(
-        (m: { role: string; content: string }) => m.role === "user" && m.content.includes("人工审批已通过"),
-      ),
-    ).toBe(true);
+      const result = await s.loopPromise;
+      expect(result.content).toBe("收尾完成");
+      expect(result.runId).toBeDefined();
+      // 合法转移链：awaiting_human → llm → done
+      expect(s.phases).toContain("awaiting_human->llm");
+      expect(s.phases[s.phases.length - 1]).toBe("llm->done");
+
+      // PUSH：审批唤醒后推送 phase=llm
+      const llmPush = pushed.find((e) => e.type === "run_updated" && e.phase === "llm" && e.status === "running");
+      expect(llmPush).toBeDefined();
+      expect(llmPush!.blockedScopes).toEqual([]);
+
+      // 操作已由审批流程真实执行
+      await expect(s.services.memory.getById(s.memoryId)).rejects.toThrow();
+
+      // Run 终态：success + output.phase=done
+      const finalRun = await s.ctx.prisma.run.findUnique({ where: { id: result.runId! } });
+      expect(finalRun!.status).toBe("success");
+      expect((finalRun!.output as { phase: string }).phase).toBe("done");
+
+      // 第二轮 LLM 收到续跑注入消息（含执行结果）
+      const second = s.calls[1];
+      const resumeMsg = second.find(
+        (m) => m.role === "user" && typeof m.content === "string" && m.content.includes("人工审批已通过"),
+      );
+      expect(resumeMsg).toBeDefined();
+
+      // 同 session 注入落库（前端 message_upserted 路径）
+      const msgs = await s.services.message.list({ sessionId: s.sessionId, page: 1, pageSize: 50 });
+      expect(
+        msgs.items.some(
+          (m: { role: string; content: string }) => m.role === "user" && m.content.includes("人工审批已通过"),
+        ),
+      ).toBe(true);
+    } finally {
+      notifySpy.mockRestore();
+      pushSpy.mockRestore();
+    }
   });
 
   it("审批 reject → LLM 收到拒绝信息并收尾，run 正常结束", async () => {

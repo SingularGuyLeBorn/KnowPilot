@@ -10,7 +10,14 @@ import path from "path";
 import { PrismaClient } from "@prisma/client";
 import { Syncer, SyncRecord } from "./types.js";
 import { upsertFtsRow, deleteFtsRow } from "../../infra/ftsIndex.js";
-import { getFilesRecursive, parseMarkdownFile, filePathToSlug, readBoolean, getFileMtime } from "./utils.js";
+import {
+  getFilesRecursive,
+  parseMarkdownFile,
+  filePathToSlug,
+  readBoolean,
+  readStringArray,
+  getFileMtime,
+} from "./utils.js";
 import {
   inferKindFromScanPath,
   shouldSkipSkillScanPath,
@@ -25,6 +32,7 @@ export interface SkillMeta {
   kind?: SkillKind;
   version?: string;
   package?: boolean;
+  source?: string;
 }
 
 interface SkillData {
@@ -34,15 +42,9 @@ interface SkillData {
   icon: string | null;
   trigger: string | null;
   enabled: boolean;
+  /** CSV，与 Post/Memory.tags 统一 */
+  tags: string;
   metaJson: string | null;
-}
-
-function readStringArray(value: unknown): string[] | undefined {
-  if (Array.isArray(value)) return value.map(String);
-  if (typeof value === "string" && value.trim()) {
-    return value.split(/[\n,]+/).map((s) => s.trim()).filter(Boolean);
-  }
-  return undefined;
 }
 
 function parseSkillFrontmatter(
@@ -63,13 +65,17 @@ function parseSkillFrontmatter(
         ? String(data.version)
         : "1.0.0";
 
+  const source = typeof data.source === "string" && data.source.trim() ? data.source.trim() : undefined;
+  const tools = readStringArray(data["allowed-tools"] ?? data.allowedTools);
+
   return {
     model: typeof data.model === "string" ? data.model : undefined,
     context,
-    allowedTools: readStringArray(data["allowed-tools"] ?? data.allowedTools),
+    allowedTools: tools.length ? tools : undefined,
     kind,
     version,
     package: kind === "procedural",
+    ...(source ? { source } : {}),
   };
 }
 
@@ -121,6 +127,7 @@ export const skillSyncer: Syncer<SkillData> = {
       if (fm.archived === true) enabled = false;
 
       const slug = skillFileSlug(name, meta.kind ?? "executable");
+      const tags = readStringArray(fm.tags).join(",");
 
       return {
         slug,
@@ -132,6 +139,7 @@ export const skillSyncer: Syncer<SkillData> = {
           icon,
           trigger,
           enabled,
+          tags,
           metaJson: JSON.stringify({ ...meta, trigger }),
         },
       };
@@ -153,6 +161,7 @@ export const skillSyncer: Syncer<SkillData> = {
         icon: data.icon,
         trigger: data.trigger,
         enabled: data.enabled,
+        tags: data.tags,
         metaJson: data.metaJson,
         sourceSlug: slug,
         sourceMtime: mtime,
@@ -164,13 +173,27 @@ export const skillSyncer: Syncer<SkillData> = {
         icon: data.icon,
         trigger: data.trigger,
         enabled: data.enabled,
+        tags: data.tags,
         metaJson: data.metaJson,
         sourceSlug: slug,
         sourceMtime: mtime,
       },
     });
     try {
-      await upsertFtsRow(prisma, "skill", row.id, row.name, `${row.description}\n${row.code}`);
+      const tagText = data.tags
+        ? data.tags
+            .split(",")
+            .map((t) => t.trim())
+            .filter(Boolean)
+            .join(" ")
+        : "";
+      await upsertFtsRow(
+        prisma,
+        "skill",
+        row.id,
+        row.name,
+        `${row.description}\n${tagText ? `tags:${tagText}` : ""}\n${row.code}`,
+      );
     } catch (e) {
       console.warn(`  ⚠️ [Skill FTS] upsert 失败 slug=${slug}:`, e instanceof Error ? e.message : e);
     }

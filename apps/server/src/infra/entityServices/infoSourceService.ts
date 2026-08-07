@@ -7,6 +7,7 @@ import type {
   UpdateInfoSourceInput,
   ListInfoSourcesInput,
 } from "@knowpilot/shared";
+import { canonicalListTag, formatTagsCsv, tagsFromCsv } from "@knowpilot/shared";
 import { FileSyncService } from "../../services.js";
 import { invalidateCapabilitiesCache } from "../capabilities.js";
 
@@ -45,7 +46,7 @@ export class InfoSourceService extends FileSyncService<
   protected formatEntity(raw: any): InfoSourceEntity {
     return {
       ...raw,
-      tags: raw.tags ? raw.tags.split(",").filter(Boolean).map((t: string) => t.trim()) : [],
+      tags: tagsFromCsv(raw.tags),
     };
   }
 
@@ -54,7 +55,8 @@ export class InfoSourceService extends FileSyncService<
     if (input.type) where.type = input.type;
     if (input.enabled !== undefined) where.enabled = input.enabled;
     if (input.minReliability !== undefined) where.reliability = { gte: input.minReliability };
-    if (input.tag) where.tags = { contains: input.tag };
+    const tag = canonicalListTag(input.tag);
+    if (tag) where.tags = { contains: tag };
     if (input.keyword) {
       where.OR = [
         { name: { contains: input.keyword } },
@@ -83,7 +85,7 @@ export class InfoSourceService extends FileSyncService<
       description: input.description ?? "",
       reliability: input.reliability,
       language: input.language,
-      tags: input.tags?.join(",") || "",
+      tags: formatTagsCsv(input.tags),
       enabled: input.enabled ?? true,
       fetchInterval: input.fetchInterval ?? 60,
       sourceSlug: slug,
@@ -95,7 +97,7 @@ export class InfoSourceService extends FileSyncService<
     const updateData: any = { ...data };
     if (name !== undefined) updateData.name = name.trim();
     if (url !== undefined) updateData.url = url.trim();
-    if (tags !== undefined) updateData.tags = tags.join(",");
+    if (tags !== undefined) updateData.tags = formatTagsCsv(tags);
     if (input.fetchInterval === null) updateData.fetchInterval = null;
     return updateData;
   }

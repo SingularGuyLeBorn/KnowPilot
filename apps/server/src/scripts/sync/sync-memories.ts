@@ -17,6 +17,7 @@ interface MemoryData {
   type: string;
   strength: number;
   keywords: string; // 逗号分隔
+  tags: string; // 统一组织标签 CSV
   scope?: string; // W5：缺省 global
 }
 
@@ -46,6 +47,7 @@ export const memorySyncer: Syncer<MemoryData> = {
       const type = typeof data.type === "string" ? data.type : "episodic";
       const strength = readNumber(data.strength, 1.0);
       const keywords = readStringArray(data.keywords);
+      const tags = readStringArray(data.tags);
       const scope = typeof data.scope === "string" ? data.scope : undefined;
 
       if (!memoryContent) {
@@ -56,7 +58,14 @@ export const memorySyncer: Syncer<MemoryData> = {
       return {
         slug,
         mtime,
-        data: { content: memoryContent, type, strength, keywords: keywords.join(","), scope },
+        data: {
+          content: memoryContent,
+          type,
+          strength,
+          keywords: keywords.join(","),
+          tags: tags.join(","),
+          scope,
+        },
       };
     } catch (e: any) {
       console.error(`  ❌ [Memory 解析失败] ${filePath}:`, e.message);
@@ -88,6 +97,7 @@ export const memorySyncer: Syncer<MemoryData> = {
           type: data.type,
           strength: data.strength,
           keywords: data.keywords,
+          tags: data.tags,
           sourceSlug: slug,
           sourceMtime: mtime,
           // scope 仅在文件显式声明时覆盖，否则保留 DB 现值（衰减/运行时写入不丢）
@@ -102,6 +112,7 @@ export const memorySyncer: Syncer<MemoryData> = {
           type: data.type,
           strength: data.strength,
           keywords: data.keywords,
+          tags: data.tags,
           ...(data.scope ? { scope: data.scope } : {}),
           sourceSlug: slug,
           sourceMtime: mtime,
@@ -111,11 +122,31 @@ export const memorySyncer: Syncer<MemoryData> = {
     }
     const live = await prisma.memory.findUnique({
       where: { id: rowId },
-      select: { id: true, content: true, type: true, status: true },
+      select: { id: true, content: true, type: true, status: true, keywords: true, tags: true },
     });
     if (live && live.status !== "superseded") {
       try {
-        await upsertFtsRow(prisma, "memory", live.id, live.type, live.content);
+        const kw = live.keywords
+          ? live.keywords
+              .split(",")
+              .map((t) => t.trim())
+              .filter(Boolean)
+              .join(" ")
+          : "";
+        const tg = live.tags
+          ? live.tags
+              .split(",")
+              .map((t) => t.trim())
+              .filter(Boolean)
+              .join(" ")
+          : "";
+        await upsertFtsRow(
+          prisma,
+          "memory",
+          live.id,
+          live.type,
+          [live.content, kw ? `keywords:${kw}` : "", tg ? `tags:${tg}` : ""].filter(Boolean).join("\n"),
+        );
       } catch (e) {
         console.warn(`  ⚠️ [Memory FTS] upsert 失败 slug=${slug}:`, e instanceof Error ? e.message : e);
       }

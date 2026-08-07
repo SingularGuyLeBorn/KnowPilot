@@ -86,17 +86,26 @@ export function inferKindFromScanPath(relPosix: string, fmKind?: string): SkillK
   return "executable";
 }
 
+function listFilesRecursive(absDir: string, relPrefix: string): string[] {
+  if (!fs.existsSync(absDir) || !fs.statSync(absDir).isDirectory()) return [];
+  const out: string[] = [];
+  for (const entry of fs.readdirSync(absDir)) {
+    const abs = path.join(absDir, entry);
+    const rel = `${relPrefix}/${entry}`.replace(/\\/g, "/");
+    if (fs.statSync(abs).isDirectory()) {
+      out.push(...listFilesRecursive(abs, rel));
+    } else if (fs.statSync(abs).isFile()) {
+      out.push(rel);
+    }
+  }
+  return out;
+}
+
 export function listSkillLinkedFiles(skillsRoot: string, name: string): Record<string, string[]> {
   const root = skillPackageDir(skillsRoot, name);
   const out: Record<string, string[]> = { references: [], templates: [], scripts: [], assets: [] };
   for (const dir of SUPPORT_DIRS) {
-    const abs = path.join(root, dir);
-    if (!fs.existsSync(abs) || !fs.statSync(abs).isDirectory()) continue;
-    const files = fs
-      .readdirSync(abs)
-      .filter((f) => fs.statSync(path.join(abs, f)).isFile())
-      .map((f) => `${dir}/${f}`);
-    out[dir] = files;
+    out[dir] = listFilesRecursive(path.join(root, dir), dir);
   }
   return out;
 }

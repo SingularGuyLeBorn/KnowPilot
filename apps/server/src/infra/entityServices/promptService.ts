@@ -7,6 +7,7 @@ import type {
   UpdatePromptInput,
   ListPromptsInput,
 } from "@knowpilot/shared";
+import { canonicalListTag, formatTagsCsv, tagsFromCsv } from "@knowpilot/shared";
 import { FileSyncService } from "../../services.js";
 
 export class PromptService extends FileSyncService<
@@ -28,13 +29,14 @@ export class PromptService extends FileSyncService<
       variables: raw.variables
         ? raw.variables.split(",").filter(Boolean).map((v: string) => v.trim())
         : [],
-      tags: raw.tags ? raw.tags.split(",").filter(Boolean).map((t: string) => t.trim()) : [],
+      tags: tagsFromCsv(raw.tags),
     };
   }
 
   protected buildListWhere(input: ListPromptsInput) {
     const where: any = {};
-    if (input.tag) where.tags = { contains: input.tag };
+    const tag = canonicalListTag(input.tag);
+    if (tag) where.tags = { contains: tag };
     if (input.keyword) {
       where.OR = [
         { name: { contains: input.keyword } },
@@ -50,7 +52,7 @@ export class PromptService extends FileSyncService<
       version: input.version,
       description: input.description,
       variables: input.variables.join(","),
-      tags: input.tags.join(","),
+      tags: formatTagsCsv(input.tags),
       content: input.content,
     };
   }
@@ -59,7 +61,7 @@ export class PromptService extends FileSyncService<
     const { id: _id, variables, tags, ...data } = input;
     const updateData: any = { ...data };
     if (variables !== undefined) updateData.variables = variables.join(",");
-    if (tags !== undefined) updateData.tags = tags.join(",");
+    if (tags !== undefined) updateData.tags = formatTagsCsv(tags);
     return updateData;
   }
 

@@ -520,6 +520,30 @@ async function runReactLoopInner(input: ReactLoopInput): Promise<ReactLoopResult
   }
 
   /** tool_batch 结束后节流快照 { phase, roundsUsed, executedToolsCount }；phase 转移点（如 awaiting_human）强制写 */
+  /** PUSH：/runs 与开着的 Chat 对齐 Run 相位（推拉铁律；phase 转移点强制推） */
+  const pushRunUpdated = async (patch: {
+    status: string;
+    phase: string;
+    blockedScopes?: string[];
+  }) => {
+    if (!runId) return;
+    try {
+      const { notifyAllMainSessionsUi, pushUiStateToSession } = await import("../uiStateNotify.js");
+      const ev = {
+        type: "run_updated" as const,
+        runId,
+        sessionId: input.sessionId,
+        status: patch.status,
+        phase: patch.phase,
+        ...(patch.blockedScopes !== undefined ? { blockedScopes: patch.blockedScopes } : {}),
+      };
+      if (input.sessionId) pushUiStateToSession(input.sessionId, ev);
+      await notifyAllMainSessionsUi(input.services.prisma, ev);
+    } catch {
+      /* ignore */
+    }
+  };
+
   const writeRunSnapshot = async (force = false) => {
     if (!runId || !canUpdateRun || !runSvc) return;
     const now = Date.now();
@@ -614,20 +638,7 @@ async function runReactLoopInner(input: ReactLoopInput): Promise<ReactLoopResult
         toolCallCount: countExecutedTools(),
       });
       // PUSH：/runs 与开着的 Chat 立刻对齐终态（推拉铁律）
-      try {
-        const { notifyAllMainSessionsUi, pushUiStateToSession } = await import("../uiStateNotify.js");
-        const ev = {
-          type: "run_updated" as const,
-          runId,
-          sessionId: input.sessionId,
-          status: effective,
-          phase: machine.phase,
-        };
-        if (input.sessionId) pushUiStateToSession(input.sessionId, ev);
-        await notifyAllMainSessionsUi(input.services.prisma, ev);
-      } catch {
-        /* ignore */
-      }
+      await pushRunUpdated({ status: effective, phase: machine.phase });
     } catch (err) {
       console.warn(`${formatTrace()}[ReactLoop] Run 终态写回失败:`, err instanceof Error ? err.message : err);
     }
@@ -1088,6 +1099,12 @@ async function runReactLoopInner(input: ReactLoopInput): Promise<ReactLoopResult
         } catch {
           /* 快照增强失败不阻断挂起 */
         }
+        // PUSH：进入 awaiting_human 立刻推（开着的 /runs · Chat 秒级可见）
+        await pushRunUpdated({
+          status: "running",
+          phase: "awaiting_human",
+          blockedScopes,
+        });
         input.hooks?.onProgress?.(
           `等待人工审批（${pendingApprovals.map((m) => m.approvalId).join(", ")}${
             blockedScopes.length ? `；scope ${blockedScopes.join(", ")}` : ""
@@ -1104,7 +1121,8 @@ async function runReactLoopInner(input: ReactLoopInput): Promise<ReactLoopResult
             "approval",
           );
         }
-        // 落入迭代末尾统一 machine.transition("llm")——awaiting_human → llm 合法转移
+        // 审批唤醒后：先推 llm 相位，再落入迭代末尾 machine.transition("llm")
+        await pushRunUpdated({ status: "running", phase: "llm", blockedScopes: [] });
       }
 
       // ask_user：工具返回 askUserPending → 同 phase 挂起，等 UI/邮件 resolve

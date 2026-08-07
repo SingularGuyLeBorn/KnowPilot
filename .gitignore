@@ -62,6 +62,15 @@ content/uploads/vitest-test-file-*
 content/uploads/qq-img-*
 content/uploads/screenshots/
 content/uploads/imports/
+content/uploads/essays/
+content/uploads/llm-notes/
+content/uploads/qq-text/
+content/uploads/tts/
+content/uploads/qq-img/
+# 视频抽帧临时目录（工具运行时产物）
+.tmp-video-frames/
+# algo-viz 素材包（生成物，体积大；源在 apps/algo-viz/src）
+apps/algo-viz/public/packs/
 # 测试数据隔离（#2）：Vitest 用 test.db + .test-content/.test-config/.test-data，以下为 E2E/漏网 smoke 产物防御
 .test-content/
 .test-config/
@@ -89,9 +98,10 @@ config/mcp/Test Mcp*.json
 config/prompts/smoke-prompt-*.md
 config/prompts/Test Prompt*.md
 config/sources/smoke-source-*.json
-# 运行时日记（不入库）
+# 运行时日记 / 约束 / 沉淀 Memory（不入库；可随时重建）
 config/memories/daily/
-# Runtime generated memory 文件（用户运行时沉淀，可选跟踪；此处忽略避免噪声）
+config/memories/_constraints/
+config/memories/_pinned/
 config/memories/*.md
 
 # data/ 运行时产物根（整体 .gitignore，可随时重建）
