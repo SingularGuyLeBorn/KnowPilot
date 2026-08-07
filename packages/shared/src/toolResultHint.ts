@@ -7,6 +7,20 @@ export function formatToolTimingHint(result: unknown): string | null {
   if (typeof r.summary === "string" && r.summary.trim()) {
     return r.summary.trim().slice(0, 80);
   }
+  // 工具结果落盘压缩卡（无正文）
+  if (r.offloaded === true || r._kp_persisted === true) {
+    const chars =
+      typeof r.originalChars === "number"
+        ? r.originalChars
+        : typeof r._kp_original_chars === "number"
+          ? r._kp_original_chars
+          : null;
+    const hits = typeof r.hitCount === "number" ? r.hitCount : null;
+    const parts = ["已落盘"];
+    if (chars != null) parts.push(`${chars} 字`);
+    if (hits != null) parts.push(`${hits} 命中`);
+    return parts.join(" · ");
+  }
   // 异步任务状态查询 / 等待 / 取消 结果友好化
   const asyncHint = formatAsyncJobHint(r);
   if (asyncHint) return asyncHint;

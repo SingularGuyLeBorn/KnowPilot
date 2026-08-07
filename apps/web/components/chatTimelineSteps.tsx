@@ -11,6 +11,7 @@ import {
   Check,
   ChevronRight,
   Clock,
+  FileText,
   ListTodo,
   Loader2,
   MessageCircle,
@@ -27,6 +28,29 @@ import { formatToolResultHint, type TimelineStep } from "@/lib/chatMessageUtils"
 import { formatToolDisplayName } from "@/lib/toolDisplayName";
 import { extractToolResultImages, type ToolResultImage } from "@/lib/toolResultImages";
 import { ToolStepIcon, type ToolIconStatus } from "@/lib/toolIcons";
+import { trpc } from "@/lib/trpc";
+
+/** 从工具结果卡片解析落盘路径（压缩卡或短结果注解） */
+function resolveOffloadPath(result: unknown): {
+  path: string;
+  originalChars?: number;
+  compacted: boolean;
+} | null {
+  if (!result || typeof result !== "object" || Array.isArray(result)) return null;
+  const r = result as Record<string, unknown>;
+  const path =
+    (typeof r.path === "string" && r.offloaded === true && r.path) ||
+    (typeof r._kp_result_path === "string" && r._kp_result_path) ||
+    null;
+  if (!path || !String(path).includes("tool-results")) return null;
+  const originalChars =
+    typeof r.originalChars === "number"
+      ? r.originalChars
+      : typeof r._kp_original_chars === "number"
+        ? r._kp_original_chars
+        : undefined;
+  return { path: String(path).replace(/\\/g, "/"), originalChars, compacted: r.offloaded === true };
+}
 
 type TodoListItem = { id: string; content: string; status: string };
 
@@ -494,6 +518,13 @@ const ToolStep = memo(function ToolStep({
     () => (step.result !== undefined ? extractToolResultImages(step.result) : []),
     [step.result],
   );
+  const offload = useMemo(() => resolveOffloadPath(step.result), [step.result]);
+  const [showOriginal, setShowOriginal] = useState(false);
+  const [originalOffset, setOriginalOffset] = useState(0);
+  const originalQuery = trpc.session.readToolResult.useQuery(
+    { path: offload?.path ?? "", offset: originalOffset, maxChars: 12_000 },
+    { enabled: Boolean(offload?.path && showOriginal), staleTime: 30_000 },
+  );
 
   const isPreparing = step.status === "preparing";
   const iconStatus: ToolIconStatus =
@@ -634,6 +665,79 @@ const ToolStep = memo(function ToolStep({
             ) : (
               <>
                 {resultImages.length > 0 && <ToolResultImageGallery images={resultImages} />}
+                {offload && (
+                  <div
+                    data-testid="tool-offload-panel"
+                    className="rounded-lg border border-[var(--kp-brand-light)]/60 bg-[var(--kp-brand-soft)]/20 px-2.5 py-2"
+                  >
+                    <div className="flex flex-wrap items-center gap-2 text-[10px] text-[var(--kp-text-2)]">
+                      <FileText className="h-3 w-3 shrink-0 text-[var(--kp-brand)]" />
+                      <span className="min-w-0 flex-1 truncate font-medium">
+                        {offload.compacted ? "完整结果已落盘（上下文仅含元数据）" : "结果已落盘可追溯"}
+                        {offload.originalChars != null ? ` · ${offload.originalChars} 字` : ""}
+                      </span>
+                      <button
+                        type="button"
+                        data-testid="tool-offload-toggle"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setShowOriginal((v) => !v);
+                          if (!showOriginal) setOriginalOffset(0);
+                        }}
+                        className="shrink-0 rounded-md px-1.5 py-0.5 text-[9px] font-semibold text-[var(--kp-brand-deep)] hover:bg-[var(--kp-brand-soft)]"
+                      >
+                        {showOriginal ? "收起原文" : "查看原文"}
+                      </button>
+                    </div>
+                    <p className="mt-1 truncate text-[9px] text-[var(--kp-text-3)]" title={offload.path}>
+                      {offload.path}
+                    </p>
+                    {showOriginal && (
+                      <div className="mt-2 space-y-1.5">
+                        {originalQuery.isLoading && (
+                          <div className="flex items-center gap-1 text-[10px] text-[var(--kp-brand)]">
+                            <Loader2 className="h-3 w-3 animate-spin" />
+                            加载原文…
+                          </div>
+                        )}
+                        {originalQuery.isError && (
+                          <p className="text-[10px] text-red-600">
+                            {(originalQuery.error as { message?: string })?.message ?? "读取失败"}
+                          </p>
+                        )}
+                        {originalQuery.data && (
+                          <>
+                            <pre
+                              data-testid="tool-offload-content"
+                              className="max-h-64 overflow-auto whitespace-pre-wrap break-words rounded-md bg-[var(--kp-bg)] px-2 py-1.5 text-[10px] text-[var(--kp-text-2)]"
+                            >
+                              {originalQuery.data.content}
+                            </pre>
+                            <div className="flex items-center justify-between text-[9px] text-[var(--kp-text-3)]">
+                              <span>
+                                {originalQuery.data.offset}–
+                                {originalQuery.data.offset + originalQuery.data.content.length} /{" "}
+                                {originalQuery.data.totalChars}
+                              </span>
+                              {originalQuery.data.nextOffset != null && (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setOriginalOffset(originalQuery.data!.nextOffset!);
+                                  }}
+                                  className="font-semibold text-[var(--kp-brand-deep)] hover:underline"
+                                >
+                                  下一段
+                                </button>
+                              )}
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
                 {/* Request */}
                 <div className="group/request overflow-hidden rounded-lg bg-[var(--kp-bg-mute)]/50">
                   <div className="flex items-center justify-between px-3 py-1.5">

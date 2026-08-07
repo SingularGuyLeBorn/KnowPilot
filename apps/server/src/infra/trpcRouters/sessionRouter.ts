@@ -27,6 +27,7 @@ import {
   listSyncAsyncJobs,
 } from "../asyncJobManager.js";
 import { resolveAgent } from "../agentResolver.js";
+import { readToolResultPayload } from "../toolResultOffload.js";
 
 const createTrpcInvokerForCtx = createTrpcInvoker;
 
@@ -489,6 +490,32 @@ export const sessionRouter = router({
       };
     }),
   delete: publicProcedure.meta({ description: "删除会话及其所有消息（级联删除）。", aiReadable: false }).input(z.object({ id: z.string().cuid() })).mutation(({ ctx, input }) => ctx.services.session.delete(input.id)),
+  /** Chat UI：按需读工具结果落盘原文（仅 data/tool-results，防穿越） */
+  readToolResult: publicProcedure
+    .meta({
+      description: "读取落盘工具结果原文片段（path 须在 data/tool-results 内）。",
+      aiReadable: false,
+    })
+    .input(
+      z.object({
+        path: z.string().min(1).max(500),
+        offset: z.number().int().min(0).optional(),
+        maxChars: z.number().int().min(200).max(100_000).optional(),
+      }),
+    )
+    .query(({ ctx, input }) => {
+      try {
+        return readToolResultPayload(ctx.config, input.path, {
+          offset: input.offset,
+          maxChars: input.maxChars,
+        });
+      } catch (err) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }),
   // #11 批量删除：多选会话一次删除
   bulkDelete: publicProcedure
     .meta({ description: "批量删除多个会话及其消息。", aiReadable: false })

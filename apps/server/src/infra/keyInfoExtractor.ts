@@ -1,6 +1,6 @@
 /**
  * 零模型关键信息狙击：按关键词/正则在原文中定位命中点，保留前后上下文窗口。
- * 用于工具大结果落盘后的 LLM 侧摘要（保护注意力窗口）。
+ * 产出写入厚 metadata（hitOffsets / recommendedRead）；正文不回灌主 LLM。
  */
 
 export type HitSpan = {
@@ -15,62 +15,15 @@ export type KeyInfoExtractOpts = {
   contextWindow?: number;
   /** 是否合并重叠/相邻窗口 */
   mergeOverlap?: boolean;
-  /** 未命中时按此步长切块（默认 1000） */
-  chunkStride?: number;
-  /** 未命中时每块取头/尾各多少字符（默认 100） */
-  chunkEdge?: number;
-  /** 输出给 LLM 的最大长度（硬截断） */
-  maxTotalOutput?: number;
   /** 合并时允许的最大间隔（字符） */
   mergeGap?: number;
-};
-
-export type KeyInfoCompressResult = {
-  compressed: string;
-  hits: HitSpan[];
-  missedKeywords: string[];
 };
 
 const DEFAULTS = {
   contextWindow: 400,
   mergeOverlap: true,
-  chunkStride: 1000,
-  chunkEdge: 100,
-  maxTotalOutput: 6000,
   mergeGap: 100,
 } as const;
-
-/**
- * 未命中关键词时的稀疏采样：每 stride 字符一块，每块取头 edge + 尾 edge。
- * 例：4000 字 → 4 块 × 200 字 ≈ 800 字摘要，均匀覆盖全文。
- */
-export function sampleChunkEdges(
-  text: string,
-  chunkStride: number = DEFAULTS.chunkStride,
-  chunkEdge: number = DEFAULTS.chunkEdge,
-): string {
-  if (!text) return "";
-  const stride = Math.max(1, chunkStride);
-  const edge = Math.max(1, chunkEdge);
-  const total = Math.ceil(text.length / stride);
-  const parts: string[] = [];
-  for (let i = 0; i < total; i++) {
-    const start = i * stride;
-    const chunk = text.slice(start, start + stride);
-    const end = start + chunk.length;
-    if (chunk.length <= edge * 2) {
-      parts.push(`[块 ${i + 1}/${total} @${start}-${end}]\n${chunk}`);
-      continue;
-    }
-    const head = chunk.slice(0, edge);
-    const tail = chunk.slice(-edge);
-    const mid = chunk.length - edge * 2;
-    parts.push(
-      `[块 ${i + 1}/${total} @${start}-${end}]\n${head}\n…[+${mid} 字符]…\n${tail}`,
-    );
-  }
-  return parts.join("\n\n");
-}
 
 function findWordBoundary(text: string, pos: number, direction: "left" | "right"): number {
   const marks = " \n\r\t。，；！？、.,;!?:\"'`";
@@ -193,55 +146,6 @@ export function extractKeyInfoSpans(
   if (mergeOverlap) result = mergeSpans(result, text, mergeGap);
   result.sort((a, b) => a.start - b.start);
   return result;
-}
-
-/** 压缩文本：命中片段拼接；未命中则按块稀疏采样（每 stride 取头尾 edge） */
-export function compressKeyInfo(
-  text: string,
-  keywords: string[] = [],
-  patterns: string[] = [],
-  opts: KeyInfoExtractOpts = {},
-): KeyInfoCompressResult {
-  const chunkStride = opts.chunkStride ?? DEFAULTS.chunkStride;
-  const chunkEdge = opts.chunkEdge ?? DEFAULTS.chunkEdge;
-  const maxTotalOutput = opts.maxTotalOutput ?? DEFAULTS.maxTotalOutput;
-
-  const hits = extractKeyInfoSpans(text, keywords, patterns, opts);
-
-  const missed: string[] = [];
-  const textLower = text.toLowerCase();
-  for (const kw of keywords) {
-    const t = kw.trim();
-    if (t && !textLower.includes(t.toLowerCase())) missed.push(t);
-  }
-
-  let compressed: string;
-  if (hits.length > 0) {
-    const parts = hits.map((hit, i) => {
-      const marker =
-        `\n${"─".repeat(36)}\n` +
-        `命中 [${i + 1}/${hits.length}] 「${hit.keyword}」 @${hit.start}-${hit.end}\n` +
-        `${"─".repeat(36)}\n`;
-      return marker + hit.context;
-    });
-    compressed = parts.join("\n");
-  } else if (keywords.length > 0 || patterns.length > 0) {
-    const sampled = sampleChunkEdges(text, chunkStride, chunkEdge);
-    compressed =
-      `[未命中关键词，按每 ${chunkStride} 字符切块，每块取头/尾各 ${chunkEdge} 字符]\n\n` +
-      sampled;
-  } else {
-    // 无关键词：同样按块稀疏采样，避免只看开头
-    compressed = sampleChunkEdges(text, chunkStride, chunkEdge);
-  }
-
-  if (compressed.length > maxTotalOutput) {
-    compressed =
-      compressed.slice(0, maxTotalOutput) +
-      `\n\n[内容超过 ${maxTotalOutput} 字符，已截断；完整原文见落盘路径]`;
-  }
-
-  return { compressed, hits, missedKeywords: missed };
 }
 
 /** 从工具入参自动推导期望关键词（无显式 expect 时的兜底） */

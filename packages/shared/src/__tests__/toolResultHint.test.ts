@@ -48,6 +48,24 @@ describe("formatToolTimingHint", () => {
     ).toBe("待办 3项 · 1进行中 · 1完成");
   });
 
+  it("落盘压缩卡摘要为「已落盘」而非空白", () => {
+    expect(
+      formatToolResultHint({
+        offloaded: true,
+        path: "data/tool-results/s/c.json",
+        originalChars: 12000,
+        hitCount: 2,
+      }),
+    ).toBe("已落盘 · 12000 字 · 2 命中");
+    expect(
+      formatToolResultHint({
+        _kp_persisted: true,
+        _kp_result_path: "data/tool-results/s/c.json",
+        _kp_original_chars: 80,
+      }),
+    ).toBe("已落盘 · 80 字");
+  });
+
   it("read_article 摘要含平台、作者与方法", () => {
     const hint = formatToolTimingHint({
       elapsedMs: 890,

@@ -1,10 +1,9 @@
 import { describe, it, expect } from "vitest";
 import {
-  compressKeyInfo,
   deriveExpectKeywordsFromArgs,
+  extractKeyInfoSpans,
   injectExpectPropsIntoParameters,
   peelExpectControls,
-  sampleChunkEdges,
 } from "../infra/keyInfoExtractor.js";
 
 describe("keyInfoExtractor", () => {
@@ -15,42 +14,21 @@ describe("keyInfoExtractor", () => {
       "中段 ".repeat(80) +
       "The inductor backend also improved. " +
       "结尾 ".repeat(40);
-    const { compressed, hits, missedKeywords } = compressKeyInfo(
+    const hits = extractKeyInfoSpans(
       body,
       ["torch.compile", "inductor", "speedup"],
       [String.raw`\d+%`],
-      { contextWindow: 40, maxTotalOutput: 4000 },
+      { contextWindow: 40 },
     );
     expect(hits.length).toBeGreaterThanOrEqual(2);
-    expect(compressed).toContain("torch.compile");
-    expect(compressed).toContain("30%");
-    expect(missedKeywords).toContain("speedup");
-    expect(compressed.length).toBeLessThan(body.length);
+    expect(hits.some((h) => h.context.includes("torch.compile"))).toBe(true);
+    expect(hits.some((h) => h.context.includes("30%"))).toBe(true);
   });
 
-  it("未命中时按每 1000 字符切块取头尾各 100", () => {
-    // 块0: A×1000；块1: A×500 + MIDDLE + B×494；块2: B×1000；块3: B×11 → 覆盖 MIDDLE 附近
-    const text = "A".repeat(1500) + "MIDDLE" + "B".repeat(1505);
-    const { compressed, hits } = compressKeyInfo(text, ["not-here"], [], {
-      chunkStride: 1000,
-      chunkEdge: 100,
-      maxTotalOutput: 20_000,
-    });
+  it("未命中时返回空 hits（采样偏移由 metadata.sampleOffsets 负责）", () => {
+    const text = "A".repeat(3000);
+    const hits = extractKeyInfoSpans(text, ["not-here"], []);
     expect(hits).toHaveLength(0);
-    expect(compressed).toContain("未命中关键词");
-    expect(compressed).toContain("块 1/");
-    expect(compressed).toContain("A".repeat(100));
-    expect(compressed).toContain("B".repeat(100));
-    // 每块只取 200 字级，不应把整段 MIDDLE 两侧的大片原样留下
-    expect(compressed.length).toBeLessThan(text.length / 2);
-  });
-
-  it("sampleChunkEdges 均匀覆盖", () => {
-    const text = "0123456789".repeat(200); // 2000 chars
-    const sampled = sampleChunkEdges(text, 1000, 100);
-    expect(sampled).toContain("块 1/2");
-    expect(sampled).toContain("块 2/2");
-    expect(sampled).toContain("[+800 字符]");
   });
 
   it("peelExpectControls 剥离控制参数并保留业务 args", () => {

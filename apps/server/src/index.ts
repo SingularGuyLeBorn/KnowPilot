@@ -637,19 +637,14 @@ const server = app.listen(PORT, HOST, () => {
     .catch((err) => {
       console.error("❌ [StartupRecovery] 启动恢复失败:", err);
     });
-  // 工具结果记录平面 TTL：按 retentionDays 清过期落盘，并重写瘦 index（失败不阻断启动）
+  // 工具结果记录平面 TTL：启动即清 + 周期清（节拍 = stream.cleanupIntervalMs）
   import("./infra/toolResultOffload.js")
-    .then(({ cleanupExpiredToolResults }) => {
-      const r = cleanupExpiredToolResults(config);
-      if (r.removedFiles > 0) {
-        console.log(
-          `  ♻️ [ToolResults] TTL 清理 ${r.removedFiles} 个过期文件（扫描 ${r.scannedBuckets} 桶）`,
-        );
-      }
+    .then(({ startToolResultTtlCleanup }) => {
+      startToolResultTtlCleanup(config);
     })
     .catch((err) => {
       console.warn(
-        "  ⚠️ [ToolResults] TTL 清理失败:",
+        "  ⚠️ [ToolResults] TTL 清理挂载失败:",
         err instanceof Error ? err.message : err,
       );
     });
@@ -803,6 +798,9 @@ const handleShutdown = () => {
   agentMailPollerRef?.stop();
   agentMailWebhookHealthRef?.stop();
   stopAsyncDeliveryReconciler();
+  import("./infra/toolResultOffload.js")
+    .then(({ stopToolResultTtlCleanup }) => stopToolResultTtlCleanup())
+    .catch(() => {});
   import("./infra/channels/index.js")
     .then(({ stopAllChannelAdapters }) => stopAllChannelAdapters())
     .catch((err) => {

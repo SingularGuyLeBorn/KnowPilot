@@ -291,16 +291,10 @@ export interface AppConfig {
       enabled: boolean;
       /** 超过此长度才对 LLM 压缩；落盘始终执行 */
       thresholdChars: number;
-      /** 兼容字段（无 expect 超阈值时曾用盲预览；现优先块采样） */
-      previewChars: number;
-      /** 命中点前后各保留字符数 */
+      /** 命中点前后各保留字符数（写入 metadata.hitOffsets / recommendedRead） */
       contextWindow: number;
-      /** 摘要硬上限 */
-      maxOutputChars: number;
-      /** 未命中/无 expect：每 N 字符一块 */
+      /** 无命中时推荐采样步长（写入 metadata.sampleOffsets） */
       chunkStrideChars: number;
-      /** 未命中/无 expect：每块取头/尾各 M 字符 */
-      chunkEdgeChars: number;
       /** 落盘保留天数；≤0 表示不自动清理 */
       retentionDays: number;
     };
@@ -869,14 +863,11 @@ export function createAppConfig(): AppConfig {
             500,
             parseInt(String(off.thresholdChars ?? microMax ?? "4000"), 10) || 4000,
           ),
-          previewChars: Math.max(100, parseInt(String(off.previewChars ?? "600"), 10) || 600),
           contextWindow: Math.max(50, Math.min(4000, parseInt(String(off.contextWindow ?? "400"), 10) || 400)),
-          maxOutputChars: Math.max(500, parseInt(String(off.maxOutputChars ?? "6000"), 10) || 6000),
           chunkStrideChars: Math.max(
             100,
             parseInt(String(off.chunkStrideChars ?? "1000"), 10) || 1000,
           ),
-          chunkEdgeChars: Math.max(20, Math.min(500, parseInt(String(off.chunkEdgeChars ?? "100"), 10) || 100)),
           retentionDays: Math.max(0, parseInt(String(off.retentionDays ?? "14"), 10) || 0),
         };
       })(),

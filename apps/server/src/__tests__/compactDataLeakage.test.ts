@@ -32,11 +32,8 @@ function makeConfig(overrides?: Partial<AppConfig["compact"]>): AppConfig {
       toolResultOffload: overrides?.toolResultOffload ?? {
         enabled: true,
         thresholdChars: 4000,
-        previewChars: 600,
         contextWindow: 400,
-        maxOutputChars: 6000,
         chunkStrideChars: 1000,
-        chunkEdgeChars: 100,
         retentionDays: 14,
       },
       toolLoopStreakLimit: overrides?.toolLoopStreakLimit ?? 3,

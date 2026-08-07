@@ -49,7 +49,6 @@ export type ToolResultOffloadOpts = {
   toolCallId: string;
   toolName: string;
   thresholdChars?: number;
-  previewChars?: number;
   expectKeywords?: string[];
   expectPatterns?: string[];
   contextWindow?: number;
@@ -268,23 +267,99 @@ function rewriteIndexPruned(bucketAbs: string, projectRoot: string): void {
   writeFileAtomic(indexPath, kept.join("\n") + "\n");
 }
 
+function resolveWithinToolResults(config: AppConfig, relOrAbs: string): string {
+  const rel = relOrAbs.replace(/\\/g, "/");
+  const abs = path.isAbsolute(rel) ? rel : path.join(config.projectRoot, rel);
+  const root = path.resolve(toolResultsDir(config));
+  const resolved = path.resolve(abs);
+  if (!resolved.startsWith(root + path.sep) && resolved !== root) {
+    throw new Error(`路径必须在 data/tool-results 内：${relOrAbs}`);
+  }
+  return resolved;
+}
+
 /** 读 .meta.json；path 可为 metaPath 或相对 projectRoot */
 export function readToolResultMeta(
   config: AppConfig,
   metaPathOrRel: string,
 ): ToolResultThickMetadata | null {
-  const rel = metaPathOrRel.replace(/\\/g, "/");
-  const abs = path.isAbsolute(rel) ? rel : path.join(config.projectRoot, rel);
-  const root = path.resolve(toolResultsDir(config));
-  const resolved = path.resolve(abs);
-  if (!resolved.startsWith(root + path.sep) && resolved !== root) {
-    throw new Error(`meta 路径必须在 data/tool-results 内：${metaPathOrRel}`);
-  }
+  const resolved = resolveWithinToolResults(config, metaPathOrRel);
   if (!fs.existsSync(resolved)) return null;
   try {
     return JSON.parse(fs.readFileSync(resolved, "utf8")) as ToolResultThickMetadata;
   } catch {
     return null;
+  }
+}
+
+/** UI / tRPC：按需读落盘原文片段（防路径穿越；默认截断） */
+export function readToolResultPayload(
+  config: AppConfig,
+  pathRel: string,
+  opts?: { offset?: number; maxChars?: number },
+): {
+  path: string;
+  content: string;
+  totalChars: number;
+  offset: number;
+  truncated: boolean;
+  nextOffset: number | null;
+} {
+  const resolved = resolveWithinToolResults(config, pathRel);
+  if (!fs.existsSync(resolved)) {
+    throw new Error(`工具结果文件不存在：${pathRel}`);
+  }
+  const full = fs.readFileSync(resolved, "utf8");
+  const offset = Math.max(0, Math.min(opts?.offset ?? 0, full.length));
+  const maxChars = Math.min(Math.max(opts?.maxChars ?? 12_000, 200), 100_000);
+  const slice = full.slice(offset, offset + maxChars);
+  const end = offset + slice.length;
+  return {
+    path: path.relative(config.projectRoot, resolved).replace(/\\/g, "/"),
+    content: slice,
+    totalChars: full.length,
+    offset,
+    truncated: end < full.length,
+    nextOffset: end < full.length ? end : null,
+  };
+}
+
+let ttlTimer: ReturnType<typeof setInterval> | null = null;
+
+/**
+ * 启动即清一轮 + 周期 TTL（节拍复用 stream.cleanupIntervalMs，不新增 config 面）。
+ * retentionDays≤0 时不挂定时器。返回 stop。
+ */
+export function startToolResultTtlCleanup(config: AppConfig): () => void {
+  stopToolResultTtlCleanup();
+  const days = config.compact?.toolResultOffload?.retentionDays ?? 14;
+  if (days <= 0) return stopToolResultTtlCleanup;
+  const intervalMs = Math.max(60_000, config.stream?.cleanupIntervalMs ?? 60_000);
+  const run = () => {
+    try {
+      const r = cleanupExpiredToolResults(config);
+      if (r.removedFiles > 0) {
+        console.log(
+          `[ToolResults] TTL 周期清理 ${r.removedFiles} 个文件（${r.scannedBuckets} 桶）`,
+        );
+      }
+    } catch (err) {
+      console.warn(
+        "[ToolResults] TTL 周期清理失败:",
+        err instanceof Error ? err.message : err,
+      );
+    }
+  };
+  run();
+  ttlTimer = setInterval(run, intervalMs);
+  ttlTimer.unref?.();
+  return stopToolResultTtlCleanup;
+}
+
+export function stopToolResultTtlCleanup(): void {
+  if (ttlTimer) {
+    clearInterval(ttlTimer);
+    ttlTimer = null;
   }
 }
 
