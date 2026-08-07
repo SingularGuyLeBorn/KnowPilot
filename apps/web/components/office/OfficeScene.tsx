@@ -294,8 +294,26 @@ function DeskSet({
         </mesh>
         <mesh position={[0, 0.16, 0.012]} rotation={[-0.25, 0, 0]}>
           <planeGeometry args={[0.12, 0.22]} />
-          <meshStandardMaterial color="#0EA5E9" emissive="#0284C7" emissiveIntensity={0.4} />
+          <meshStandardMaterial color="#0B3A66" emissive="#0284C7" emissiveIntensity={0.55} />
         </mesh>
+        <Text
+          position={[0, 0.2, 0.022]}
+          rotation={[-0.25, 0, 0]}
+          fontSize={0.028}
+          color="#E0F2FE"
+          anchorX="center"
+        >
+          Agent
+        </Text>
+        <Text
+          position={[0, 0.14, 0.022]}
+          rotation={[-0.25, 0, 0]}
+          fontSize={0.022}
+          color="#7DD3FC"
+          anchorX="center"
+        >
+          呼叫
+        </Text>
       </group>
 
       {/* 台历 */}
@@ -383,47 +401,123 @@ function BulletinBoard({
   const hover = useHoverCursor();
   return (
     <group
-      position={[0.3, 2.35, -4.05]}
+      position={[0.35, 2.4, -4.05]}
       onClick={(e) => {
         e.stopPropagation();
         onSelect("board");
       }}
       {...hover}
     >
-      <RoundedBox args={[3.4, 1.35, 0.08]} radius={0.02} castShadow>
-        <meshStandardMaterial color="#1E3A5F" roughness={0.55} metalness={0.2} />
+      {/* 深色软木板 + 跑马灯点（对齐参考公告板结构） */}
+      <RoundedBox args={[3.55, 1.55, 0.1]} radius={0.03} castShadow>
+        <meshStandardMaterial color="#1E3A5F" roughness={0.55} metalness={0.18} />
       </RoundedBox>
-      {/* 论文条 */}
-      {[-1.2, -0.7, -0.2].map((x, i) => (
-        <mesh key={i} position={[x, 0.25, 0.05]}>
-          <planeGeometry args={[0.35, 0.45]} />
-          <meshStandardMaterial color="#F8FAFC" />
+      {Array.from({ length: 18 }).map((_, i) => (
+        <mesh key={`dot-${i}`} position={[-1.6 + i * 0.19, 0.68, 0.06]}>
+          <circleGeometry args={[0.025, 10]} />
+          <meshBasicMaterial color={i % 3 === 0 ? "#38BDF8" : "#F8FAFC"} />
         </mesh>
       ))}
-      {/* 中心海报 */}
-      <mesh position={[0.55, 0.05, 0.05]}>
-        <planeGeometry args={[1.1, 0.95]} />
-        <meshStandardMaterial color="#EFF6FF" />
-      </mesh>
-      <Text position={[0.55, 0.35, 0.06]} fontSize={0.055} color="#1E3A5F" anchorX="center" maxWidth={1}>
-        Local-first Agent Architecture
-      </Text>
-      {/* 便利贴 */}
-      {[
-        [1.35, 0.35, "#FDE68A"],
-        [1.35, 0.05, "#FBCFE8"],
-        [1.35, -0.25, "#BBF7D0"],
-        [1.65, 0.2, "#BFDBFE"],
-        [1.65, -0.1, "#FED7AA"],
-      ].map(([x, y, c], i) => (
-        <mesh key={i} position={[x as number, y as number, 0.06]} rotation={[0, 0, (i % 2) * 0.08 - 0.04]}>
-          <planeGeometry args={[0.22, 0.22]} />
-          <meshStandardMaterial color={c as string} />
-        </mesh>
+
+      {/* 左侧文档条 */}
+      {[-1.25, -0.78, -0.32].map((x, i) => (
+        <group key={`doc-${i}`} position={[x, 0.08, 0.06]}>
+          <mesh>
+            <planeGeometry args={[0.38, 0.72]} />
+            <meshStandardMaterial color="#F8FAFC" />
+          </mesh>
+          <mesh position={[0, 0.22, 0.002]}>
+            <planeGeometry args={[0.28, 0.06]} />
+            <meshBasicMaterial color="#BFDBFE" />
+          </mesh>
+          {[0.08, 0, -0.08, -0.16].map((yy, j) => (
+            <mesh key={j} position={[0, yy, 0.002]}>
+              <planeGeometry args={[0.26, 0.02]} />
+              <meshBasicMaterial color="#CBD5E1" />
+            </mesh>
+          ))}
+        </group>
       ))}
+
+      {/* 中心架构海报 */}
+      <group position={[0.55, 0.02, 0.06]}>
+        <mesh>
+          <planeGeometry args={[1.25, 1.05]} />
+          <meshStandardMaterial color="#EFF6FF" />
+        </mesh>
+        <Text
+          position={[0, 0.4, 0.01]}
+          fontSize={0.048}
+          color="#0B3A66"
+          anchorX="center"
+          maxWidth={1.15}
+          lineHeight={1.15}
+        >
+          {BOARD_POSTER.title}
+        </Text>
+        <Text
+          position={[0, 0.22, 0.01]}
+          fontSize={0.028}
+          color="#0284C7"
+          anchorX="center"
+          maxWidth={1.1}
+        >
+          {BOARD_POSTER.subtitle}
+        </Text>
+        {/* 假图表块 */}
+        <mesh position={[-0.28, -0.05, 0.01]}>
+          <planeGeometry args={[0.45, 0.35]} />
+          <meshBasicMaterial color="#DBEAFE" />
+        </mesh>
+        <mesh position={[0.28, -0.05, 0.01]}>
+          <planeGeometry args={[0.45, 0.35]} />
+          <meshBasicMaterial color="#E0F2FE" />
+        </mesh>
+        {[-0.38, -0.28, -0.18, -0.08].map((x, i) => (
+          <mesh key={i} position={[x, -0.18 + i * 0.04, 0.012]}>
+            <boxGeometry args={[0.06, 0.08 + i * 0.04, 0.01]} />
+            <meshBasicMaterial color="#0087EB" />
+          </mesh>
+        ))}
+        <Text position={[0, -0.38, 0.01]} fontSize={0.026} color="#64748B" anchorX="center" maxWidth={1.1}>
+          Abstract · Method · Invariant
+        </Text>
+      </group>
+
+      {/* 便利贴 + 文案 */}
+      {BOARD_STICKIES.map((s, i) => {
+        const col = i % 2;
+        const row = Math.floor(i / 2);
+        const x = 1.35 + col * 0.32;
+        const y = 0.38 - row * 0.32;
+        return (
+          <group
+            key={s.label}
+            position={[x, y, 0.07]}
+            rotation={[0, 0, ((i % 3) - 1) * 0.06]}
+          >
+            <mesh>
+              <planeGeometry args={[0.28, 0.28]} />
+              <meshStandardMaterial color={s.color} />
+            </mesh>
+            <Text
+              position={[0, 0, 0.01]}
+              fontSize={0.028}
+              color="#1E293B"
+              anchorX="center"
+              anchorY="middle"
+              maxWidth={0.24}
+              lineHeight={1.2}
+            >
+              {s.label}
+            </Text>
+          </group>
+        );
+      })}
+
       {activeId === "board" && (
-        <mesh position={[0, -0.85, 0.02]}>
-          <ringGeometry args={[0.4, 0.48, 32]} />
+        <mesh position={[0, -0.95, 0.02]}>
+          <ringGeometry args={[0.42, 0.5, 32]} />
           <meshBasicMaterial color="#0087EB" transparent opacity={0.5} />
         </mesh>
       )}
@@ -439,9 +533,19 @@ function JourneyMap({
   activeId: OfficeHotspotId | null;
 }) {
   const hover = useHoverCursor();
+  /** 钉点坐标：L1→Now 分布在「大陆」上 */
+  const pins = [
+    [-0.85, 0.28],
+    [-0.35, 0.12],
+    [0.15, -0.05],
+    [0.55, 0.18],
+    [0.9, -0.12],
+    [0.35, -0.35],
+  ] as const;
+
   return (
     <group
-      position={[-4.8, 2.2, -0.8]}
+      position={[-4.8, 2.25, -0.6]}
       rotation={[0, Math.PI / 2, 0]}
       onClick={(e) => {
         e.stopPropagation();
@@ -449,41 +553,80 @@ function JourneyMap({
       }}
       {...hover}
     >
-      <RoundedBox args={[2.6, 1.6, 0.06]} radius={0.02} castShadow>
-        <meshStandardMaterial color="#1E293B" roughness={0.8} />
+      <RoundedBox args={[2.85, 1.85, 0.07]} radius={0.02} castShadow>
+        <meshStandardMaterial color="#0F172A" roughness={0.75} />
       </RoundedBox>
-      <mesh position={[0, 0, 0.035]}>
-        <planeGeometry args={[2.4, 1.4]} />
-        <meshStandardMaterial color="#334155" />
+      <mesh position={[0, 0, 0.04]}>
+        <planeGeometry args={[2.65, 1.65]} />
+        <meshStandardMaterial color="#1E293B" />
       </mesh>
-      {/* 简化「大陆」块 */}
-      <mesh position={[-0.4, 0.1, 0.04]}>
-        <planeGeometry args={[1.2, 0.7]} />
+      {/* 简化大陆 */}
+      <mesh position={[-0.35, 0.05, 0.045]}>
+        <planeGeometry args={[1.4, 0.85]} />
+        <meshBasicMaterial color="#334155" />
+      </mesh>
+      <mesh position={[0.75, -0.2, 0.045]}>
+        <planeGeometry args={[0.85, 0.6]} />
         <meshBasicMaterial color="#475569" />
       </mesh>
-      <mesh position={[0.7, -0.15, 0.04]}>
-        <planeGeometry args={[0.7, 0.5]} />
-        <meshBasicMaterial color="#64748B" />
-      </mesh>
-      {/* 标记点 */}
-      {[
-        [-0.8, 0.25],
-        [-0.2, 0.05],
-        [0.5, -0.1],
-        [0.9, 0.2],
-      ].map(([x, y], i) => (
-        <mesh key={i} position={[x, y, 0.05]}>
-          <circleGeometry args={[0.06, 16]} />
-          <meshBasicMaterial color="#38BDF8" />
-        </mesh>
-      ))}
-      <Text position={[0, 0.65, 0.05]} fontSize={0.09} color="#E0F2FE" anchorX="center">
-        Oasis Journey
+      <Text position={[0, 0.78, 0.05]} fontSize={0.085} color="#E0F2FE" anchorX="center">
+        Oasis Journey · L1→Now
       </Text>
+
+      {JOURNEY_STOPS.map((stop, i) => {
+        const [x, y] = pins[i] ?? [0, 0];
+        const cardSide = i % 2 === 0 ? -1 : 1;
+        return (
+          <group key={stop.year} position={[x, y, 0.055]}>
+            <mesh>
+              <circleGeometry args={[0.055, 16]} />
+              <meshBasicMaterial color="#38BDF8" />
+            </mesh>
+            <mesh position={[0, 0, 0.002]}>
+              <circleGeometry args={[0.025, 12]} />
+              <meshBasicMaterial color="#F0F9FF" />
+            </mesh>
+            {/* 浮动信息卡（对齐参考地图气泡） */}
+            <group position={[cardSide * 0.42, 0.22, 0.02]}>
+              <mesh>
+                <planeGeometry args={[0.72, 0.38]} />
+                <meshBasicMaterial color="#FFFFFF" />
+              </mesh>
+              <Text
+                position={[-0.3, 0.1, 0.01]}
+                fontSize={0.045}
+                color="#0087EB"
+                anchorX="left"
+              >
+                {stop.year}
+              </Text>
+              <Text
+                position={[-0.3, 0.02, 0.01]}
+                fontSize={0.032}
+                color="#0F172A"
+                anchorX="left"
+                maxWidth={0.62}
+              >
+                {stop.place}
+              </Text>
+              <Text
+                position={[-0.3, -0.1, 0.01]}
+                fontSize={0.024}
+                color="#64748B"
+                anchorX="left"
+                maxWidth={0.62}
+              >
+                {stop.region}
+              </Text>
+            </group>
+          </group>
+        );
+      })}
+
       {activeId === "map" && (
-        <mesh position={[0, 0, 0.06]}>
-          <planeGeometry args={[2.5, 1.5]} />
-          <meshBasicMaterial color="#0087EB" transparent opacity={0.12} />
+        <mesh position={[0, 0, 0.07]}>
+          <planeGeometry args={[2.7, 1.7]} />
+          <meshBasicMaterial color="#0087EB" transparent opacity={0.1} />
         </mesh>
       )}
     </group>
@@ -494,18 +637,18 @@ function PolaroidWall() {
   const frames = useMemo(
     () =>
       [
-        [-2.8, 2.8, "#7DD3FC"],
-        [-2.2, 3.1, "#67E8F9"],
-        [-1.5, 2.7, "#93C5FD"],
-        [-2.5, 2.2, "#BAE6FD"],
-        [-1.8, 2.15, "#A5F3FC"],
+        [-2.9, 2.85, "#7DD3FC", "Chat"],
+        [-2.3, 3.15, "#67E8F9", "Garden"],
+        [-1.55, 2.75, "#93C5FD", "Swarm"],
+        [-2.6, 2.2, "#BAE6FD", "Memory"],
+        [-1.85, 2.1, "#A5F3FC", "HITL"],
       ] as const,
     [],
   );
   return (
     <group position={[0, 0, -4.05]}>
-      {frames.map(([x, y, c], i) => (
-        <group key={i} position={[x, y, 0.04]} rotation={[0, 0, ((i % 3) - 1) * 0.06]}>
+      {frames.map(([x, y, c, label], i) => (
+        <group key={label} position={[x, y, 0.04]} rotation={[0, 0, ((i % 3) - 1) * 0.06]}>
           <mesh castShadow>
             <boxGeometry args={[0.42, 0.5, 0.03]} />
             <meshStandardMaterial color="#F8FAFC" roughness={0.7} />
@@ -514,6 +657,43 @@ function PolaroidWall() {
             <planeGeometry args={[0.34, 0.34]} />
             <meshBasicMaterial color={c} />
           </mesh>
+          <Text position={[0, -0.18, 0.025]} fontSize={0.035} color="#334155" anchorX="center">
+            {label}
+          </Text>
+        </group>
+      ))}
+    </group>
+  );
+}
+
+/** 绿植旁小奖杯架——对齐参考里的成就角落，文案换成里程碑 */
+function MilestoneShelf() {
+  return (
+    <group position={[3.55, 0.9, -3.5]}>
+      <RoundedBox args={[0.7, 0.08, 0.28]} radius={0.02} castShadow>
+        <meshStandardMaterial color="#E2E8F0" roughness={0.5} metalness={0.2} />
+      </RoundedBox>
+      {[
+        [-0.2, "L1"],
+        [0, "L5"],
+        [0.2, "♥"],
+      ].map(([x, label], i) => (
+        <group key={String(label)} position={[x as number, 0.18, 0]}>
+          <mesh castShadow>
+            <cylinderGeometry args={[0.04, 0.05, 0.08, 12]} />
+            <meshStandardMaterial color={i === 2 ? "#F59E0B" : "#94A3B8"} metalness={0.55} roughness={0.3} />
+          </mesh>
+          <mesh position={[0, 0.1, 0]} castShadow>
+            <sphereGeometry args={[0.055, 12, 12]} />
+            <meshStandardMaterial
+              color={i === 1 ? "#0087EB" : i === 2 ? "#FBBF24" : "#CBD5E1"}
+              metalness={0.4}
+              roughness={0.35}
+            />
+          </mesh>
+          <Text position={[0, -0.12, 0.08]} fontSize={0.04} color="#475569" anchorX="center">
+            {label as string}
+          </Text>
         </group>
       ))}
     </group>
@@ -558,9 +738,23 @@ function Plant({
   );
 }
 
-function FloorLamp() {
+function FloorLamp({
+  onSelect,
+  activeId,
+}: {
+  onSelect: (id: OfficeHotspotId) => void;
+  activeId: OfficeHotspotId | null;
+}) {
+  const hover = useHoverCursor();
   return (
-    <group position={[-3.2, 0, -3.2]}>
+    <group
+      position={[-3.2, 0, -3.2]}
+      onClick={(e) => {
+        e.stopPropagation();
+        onSelect("lamp");
+      }}
+      {...hover}
+    >
       <mesh position={[0, 0.9, 0]} castShadow>
         <cylinderGeometry args={[0.03, 0.04, 1.8, 8]} />
         <meshStandardMaterial color={METAL} metalness={0.65} roughness={0.3} />
@@ -570,6 +764,7 @@ function FloorLamp() {
         <meshStandardMaterial color="#F8FAFC" emissive="#E0F2FE" emissiveIntensity={0.55} roughness={0.75} />
       </mesh>
       <pointLight position={[0, 1.9, 0]} intensity={0.85} distance={5} color="#E0F2FE" />
+      {activeId === "lamp" && <HotspotGlow active />}
     </group>
   );
 }
@@ -664,7 +859,8 @@ function SceneContent({ onSelect, activeId }: OfficeSceneProps) {
       <JourneyMap onSelect={onSelect} activeId={activeId} />
       <PolaroidWall />
       <Plant onSelect={onSelect} activeId={activeId} />
-      <FloorLamp />
+      <MilestoneShelf />
+      <FloorLamp onSelect={onSelect} activeId={activeId} />
       <DogBuddy onSelect={onSelect} activeId={activeId} />
       <Skateboard />
 
