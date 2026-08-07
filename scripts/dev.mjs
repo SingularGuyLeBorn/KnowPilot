@@ -365,15 +365,18 @@ async function main() {
   // 先清遗留 3010，避免 health 命中僵尸进程、新 server 绑定失败却误报「就绪」
   await killOrphanServer(3010);
 
-  // 若配置了 OneBot 指定 QQ 账号，启动项目时自动拉起 NapCat/QQ（不阻塞 server）
+  // 若配置了 OneBot 指定 QQ 账号：拉起 NapCat（已在线则进掉线守护），脚本崩溃时指数退避重启
   if (process.env.ONEBOT_QQ_ACCOUNT && process.env.ONEBOT_ENABLED !== "false") {
     const { url, alreadyOnline } = await resolveOneBotHttpUrl(process.env.ONEBOT_QQ_ACCOUNT);
     process.env.ONEBOT_HTTP_URL = url;
-    if (!alreadyOnline) {
-      spawnService("napcat", ["napcat"], { fatal: false, restart: false });
-    } else {
-      console.log(`  ℹ️  目标 QQ 已在线，跳过 NapCat 启动`);
+    if (alreadyOnline) {
+      console.log(`  ℹ️  目标 QQ 已在线，仍启动 NapCat 守护进程监控掉线重登`);
     }
+    spawnService("napcat", ["napcat"], {
+      fatal: false,
+      restart: true,
+      maxRestarts: Infinity,
+    });
   }
 
   // server 意外退出（如未捕获异常/历史 Tesseract Worker 崩进程）自动拉起，不拖死整栈；
