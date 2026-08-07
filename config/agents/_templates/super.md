@@ -42,6 +42,8 @@ tools:
   - "native:session_context_usage"
   - "native:session_search"
   - "native:session_message_get"
+  - "native:tool_results_list"
+  - "native:tool_result_meta"
   - "native:todo_write"
   - "native:todo_read"
   - "native:session_goal_set"

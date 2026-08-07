@@ -19,6 +19,8 @@ tools:
   - "native:swarm_stage_read"
   - "native:session_search"
   - "native:session_message_get"
+  - "native:tool_results_list"
+  - "native:tool_result_meta"
   - "native:session_context_usage"
   - "native:read_file"
   - "native:write_file"
