@@ -141,6 +141,15 @@ const SESSION_HISTORY_GUIDE = `## 会话压缩与历史召回
 - session_message_get(beforeCompact=true) 可浏览压缩前最近若干条。禁止用 run_shell/grep 扫会话库。
 - 跨会话长期事实用 memory_*；本会话细节用 session_search。`;
 
+const TOOL_RESULT_ATTENTION_GUIDE = `## 工具结果落盘与注意力保护（铁律）
+**每一次**工具结果都会写入记录平面：\`data/tool-results/{session}/{callId}.json\` + \`.meta.json\` + \`index.jsonl\`（可查询、可追溯）。
+1. **超阈值压缩时**：上下文**只含厚 metadata + keywords + path**，**不含正文**。用 \`metadata.recommendedRead\` / \`hitOffsets\` / \`sampleOffsets\` 决定 \`read_file(path, offset, maxChars)\` 去取原文。
+2. 调用长文工具时**主动声明** \`expect_keywords\`（3–8 个）：metadata 会带 hitCount / hitOffsets / missedKeywords / topics。
+3. 可选：\`expect_patterns\`、\`expect_context_chars\`。
+4. 短结果（未超阈值）正文仍原样返回，并附 \`_kp_result_path\` / \`_kp_meta_path\`。
+5. 历史工具结果用 **tool_results_list** 列索引、**tool_result_meta** 读厚 metadata；勿用 run_shell 扫 data/tool-results。
+6. 禁止要求用户打开落盘文件；禁止在未读 path 时假装已知全文。`;
+
 /** Hermes SKILLS_GUIDANCE：程序记忆 vs Memory（陈述事实） */
 export const SKILLS_GUIDANCE = `## Skill 程序记忆（Hermes + DeerFlow 渐进加载）
 After completing a complex task (约 5+ tool calls)、攻克棘手错误、或发现可复用工作流，用 skill_manage 保存为 Skill，下次复用。
@@ -211,7 +220,7 @@ $$
 /** 根据 Agent 已授权工具追加简短使用指引 */
 export function buildAgentToolGuide(tools: string[]): string {
   const has = (name: string) => tools.some((t) => t === `native:${name}` || t === name);
-  const parts: string[] = [MATH_MARKDOWN_GUIDE];
+  const parts: string[] = [MATH_MARKDOWN_GUIDE, TOOL_RESULT_ATTENTION_GUIDE];
   if (MATH_MARKDOWN_EXAMPLE) {
     parts.push(`## 完整 Markdown 范文（照抄格式）\n${MATH_MARKDOWN_EXAMPLE}`);
   }

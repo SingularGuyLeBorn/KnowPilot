@@ -283,10 +283,26 @@ export interface AppConfig {
       enabled: boolean;
       toolResultMaxChars: number;
     };
-    /** 工具大结果落盘：超阈值写 data/tool-results，LLM 只拿路径+预览 */
+    /**
+     * 工具结果全量落盘 + 超阈值时对 LLM 压缩。
+     * 一律写 data/tool-results + index.jsonl；thresholdChars 只控制是否对 LLM 做摘要替换。
+     */
     toolResultOffload: {
       enabled: boolean;
+      /** 超过此长度才对 LLM 压缩；落盘始终执行 */
       thresholdChars: number;
+      /** 兼容字段（无 expect 超阈值时曾用盲预览；现优先块采样） */
+      previewChars: number;
+      /** 命中点前后各保留字符数 */
+      contextWindow: number;
+      /** 摘要硬上限 */
+      maxOutputChars: number;
+      /** 未命中/无 expect：每 N 字符一块 */
+      chunkStrideChars: number;
+      /** 未命中/无 expect：每块取头/尾各 M 字符 */
+      chunkEdgeChars: number;
+      /** 落盘保留天数；≤0 表示不自动清理 */
+      retentionDays: number;
     };
     /** 同参连续 tool call 熔断阈值（DeerFlow LoopDetection） */
     toolLoopStreakLimit: number;
@@ -843,23 +859,27 @@ export function createAppConfig(): AppConfig {
           ),
         ),
       },
-      toolResultOffload: {
-        enabled:
-          String(
-            (compactConfig.toolResultOffload as Record<string, unknown> | undefined)?.enabled ?? "true",
-          ) !== "false",
-        thresholdChars: Math.max(
-          500,
-          parseInt(
-            String(
-              (compactConfig.toolResultOffload as Record<string, unknown> | undefined)?.thresholdChars ??
-                (compactConfig.microCompact as Record<string, unknown> | undefined)?.toolResultMaxChars ??
-                "4000",
-            ),
-            10,
+      toolResultOffload: (() => {
+        const off = (compactConfig.toolResultOffload as Record<string, unknown> | undefined) ?? {};
+        const microMax = (compactConfig.microCompact as Record<string, unknown> | undefined)
+          ?.toolResultMaxChars;
+        return {
+          enabled: String(off.enabled ?? "true") !== "false",
+          thresholdChars: Math.max(
+            500,
+            parseInt(String(off.thresholdChars ?? microMax ?? "4000"), 10) || 4000,
           ),
-        ),
-      },
+          previewChars: Math.max(100, parseInt(String(off.previewChars ?? "600"), 10) || 600),
+          contextWindow: Math.max(50, Math.min(4000, parseInt(String(off.contextWindow ?? "400"), 10) || 400)),
+          maxOutputChars: Math.max(500, parseInt(String(off.maxOutputChars ?? "6000"), 10) || 6000),
+          chunkStrideChars: Math.max(
+            100,
+            parseInt(String(off.chunkStrideChars ?? "1000"), 10) || 1000,
+          ),
+          chunkEdgeChars: Math.max(20, Math.min(500, parseInt(String(off.chunkEdgeChars ?? "100"), 10) || 100)),
+          retentionDays: Math.max(0, parseInt(String(off.retentionDays ?? "14"), 10) || 0),
+        };
+      })(),
       toolLoopStreakLimit: Math.max(
         2,
         parseInt(String(compactConfig.toolLoopStreakLimit ?? "3"), 10) || 3,

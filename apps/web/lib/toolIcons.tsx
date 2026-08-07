@@ -197,6 +197,8 @@ const EXACT_TOOL_ICONS: Record<string, LucideIcon> = {
   session_compact: Minimize2,
   session_search: Search,
   session_message_get: BookMarked,
+  tool_results_list: Search,
+  tool_result_meta: BookMarked,
 
   agent_create: UserPlus,
   agent_update: Settings,

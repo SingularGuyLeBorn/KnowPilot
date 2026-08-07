@@ -20,6 +20,7 @@ import {
 import { buildTierIdentityHint, buildAgentToolGuide } from "../infra/promptBuilder.js";
 import type { LlmMessage } from "../infra/llmClient.js";
 import type { NativeToolContext } from "../infra/tools/native/types.js";
+import { createTestConfig } from "./helpers/toolTestFixtures.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -36,7 +37,7 @@ const fixtures = JSON.parse(
 
 function makeCtx(partial?: Partial<NativeToolContext>): NativeToolContext {
   return {
-    config: {} as NativeToolContext["config"],
+    config: createTestConfig(path.resolve(__dirname, "../../..")),
     services: {
       prisma: {
         agent: { findUnique: async () => null },

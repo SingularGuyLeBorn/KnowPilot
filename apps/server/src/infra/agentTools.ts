@@ -41,6 +41,7 @@ import { makeAbortError } from "./abortReason.js";
 import { resolveAgent } from "./agentResolver.js";
 import { formatTrace } from "./trace.js";
 import { coerceToolBoolean } from "./tools/native/types.js";
+import { injectExpectPropsIntoParameters, peelExpectControls } from "./keyInfoExtractor.js";
 
 function parseToolCallArgs(call: LlmToolCall): { name: string; args: Record<string, unknown> } {
   let args: Record<string, unknown> = {};
@@ -286,6 +287,13 @@ export async function buildAgentToolSchemas(
     }
   }
 
+  // 全工具注入 expect_*（注意力保护）；idempotent，不覆盖已有同名属性
+  for (const schema of schemas) {
+    schema.function.parameters = injectExpectPropsIntoParameters(
+      (schema.function.parameters ?? { type: "object", properties: {} }) as Record<string, unknown>,
+    );
+  }
+
   // P1-01 余项：超 50KB warn；超硬顶先剥集成 opt-in → skill → mcp，仍超则拒跑
   let schemaBytes = JSON.stringify(schemas).length;
   if (schemaBytes > SCHEMA_WARN_BYTES) {
@@ -346,18 +354,20 @@ export async function executeAgentTool(
   registry: Map<string, ToolRegistryEntry>,
 ): Promise<unknown> {
   const entry = registry.get(toolName);
+  // expect_* 仅供结果后处理；剥掉后再进 skill/MCP/native，避免下游 schema 拒参
+  const { cleanArgs } = peelExpectControls(args);
 
   if (entry?.kind === "skill" && entry.skillName) {
-    return executeSkill(ctx.services, entry.skillName, args);
+    return executeSkill(ctx.services, entry.skillName, cleanArgs);
   }
 
   if (entry?.kind === "mcp" || parseMcpToolName(toolName)) {
-    return executeMcpTool(ctx.services, toolName, args);
+    return executeMcpTool(ctx.services, toolName, cleanArgs);
   }
 
   const skillRef = parseSkillToolName(toolName);
   if (skillRef && (ctx.allowedSkills.includes(skillRef) || ctx.allowedSkills.length === 0)) {
-    return executeSkill(ctx.services, skillRef, args);
+    return executeSkill(ctx.services, skillRef, cleanArgs);
   }
 
   const nativeName = entry?.nativeName || toolName;
@@ -376,10 +386,10 @@ export async function executeAgentTool(
   }
 
   // HITL：native 危险操作与 tRPC 审批走同一闸门（AGENT_DESTRUCTIVE_APPROVAL / APPROVAL_REQUIRED_OPS）
-  const approvalId = typeof args.approvalId === "string" ? args.approvalId : undefined;
-  await assertApprovalOrProceed(ctx.services, nativeName, args, approvalId);
+  const approvalId = typeof cleanArgs.approvalId === "string" ? cleanArgs.approvalId : undefined;
+  await assertApprovalOrProceed(ctx.services, nativeName, cleanArgs, approvalId);
 
-  return executeNativeTool(nativeName, args, ctx);
+  return executeNativeTool(nativeName, cleanArgs, ctx);
 }
 
 /** 因工具调用预算未执行时的统一结果（须仍回写 tool 消息以匹配 tool_call_id） */

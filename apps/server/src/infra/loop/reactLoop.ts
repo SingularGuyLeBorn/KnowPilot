@@ -52,6 +52,7 @@ import type { Agent } from "@knowpilot/shared";
 import { buildSystemPromptSkeleton } from "../promptBuilder.js";
 import { formatTrace } from "../trace.js";
 import { offloadToolResultIfNeeded } from "../toolResultOffload.js";
+import { peelExpectControls } from "../keyInfoExtractor.js";
 import { checkToolLoop, createLoopGuardState } from "./toolLoopGuard.js";
 /** W11：Run.output 活状态快照写回节流间隔（每轮 tool_batch 后至多写一次） */
 const RUN_SNAPSHOT_THROTTLE_MS = 5000;
@@ -278,19 +279,23 @@ function appendToolResultMessages(
     let resultForStore = item.result;
     let resultForLlm = item.result;
 
-    // DeerFlow：大结果落盘，LLM 只拿路径 + 预览
+    // 全量落盘（可追溯）+ 超阈值时关键词狙击/块采样压缩给 LLM
     if (offloadCtx?.config) {
       try {
+        const expect = peelExpectControls(item.args ?? {});
         const off = offloadToolResultIfNeeded(offloadCtx.config, item.result, {
           sessionId: offloadCtx.sessionId,
           runId: offloadCtx.runId,
           toolCallId: item.call.id,
           toolName: item.name,
           thresholdChars: offloadCtx.config.compact.toolResultOffload.thresholdChars,
+          expectKeywords: expect.keywords,
+          expectPatterns: expect.patterns,
+          contextWindow: expect.contextWindow,
         });
         if (off) {
           resultForLlm = off.llmResult;
-          // 存盘路径留给 UI/审计；完整原文已在文件
+          // 审计侧保留落盘后的 LLM 视图（含 path）；原文在 data/tool-results
           resultForStore = off.llmResult;
           if (off.artifact) {
             offloadCtx.onArtifact?.({
@@ -302,7 +307,7 @@ function appendToolResultMessages(
         }
       } catch (err) {
         console.warn(
-          "[ReactLoop] tool result offload 失败，回退截断:",
+          "[ReactLoop] tool result persist 失败，回退截断:",
           err instanceof Error ? err.message : err,
         );
       }

@@ -33,6 +33,10 @@ import {
 } from "../../goalLoop.js";
 import { createTrpcInvoker } from "../../trpcInvoker.js";
 import { prisma } from "../../../db.js";
+import {
+  listToolResultIndex,
+  readToolResultMeta,
+} from "../../toolResultOffload.js";
 
 /**
  * spawn waitForResult 轮询的空闲判定（S2）。仅「无流」不够，必须四条件同时满足：
@@ -928,6 +932,66 @@ async function sessionMessageGetTool(args: Record<string, unknown>, ctx: NativeT
   throw new Error("请提供 messageId，或设 beforeCompact=true 浏览压缩前消息");
 }
 
+/** 列出本会话落盘工具结果瘦索引（不含正文）。 */
+async function toolResultsListTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  if (!ctx.sessionId) throw new Error("tool_results_list 需要在 Chat 会话中调用（缺少 sessionId）");
+
+  const keyword = typeof args.keyword === "string" ? args.keyword.trim().toLowerCase() : "";
+  const toolName = typeof args.toolName === "string" ? args.toolName.trim() : "";
+  const limit = Math.min(Math.max(Number(args.limit ?? 20) || 20, 1), 50);
+
+  let items = listToolResultIndex(ctx.config, ctx.sessionId);
+  if (toolName) items = items.filter((i) => i.toolName === toolName);
+  if (keyword) {
+    items = items.filter((i) => {
+      const hay = [
+        i.toolName,
+        i.title ?? "",
+        i.contentType,
+        ...i.keywords,
+        ...i.topics,
+        ...i.entities,
+      ]
+        .join("\n")
+        .toLowerCase();
+      return hay.includes(keyword);
+    });
+  }
+  const total = items.length;
+  // 新→旧
+  const page = items.slice().reverse().slice(0, limit);
+  return {
+    sessionId: ctx.sessionId,
+    total,
+    returned: page.length,
+    items: page,
+    hint:
+      page.length === 0
+        ? "本会话尚无落盘工具结果，或过滤条件过严。工具执行后会自动写入 data/tool-results/{session}/。"
+        : "以上为索引卡（无正文）。深挖用 tool_result_meta(metaPath) 或 read_file(path, offset, maxChars)。",
+  };
+}
+
+/** 读取某次工具结果的厚 metadata（不含正文）。 */
+async function toolResultMetaTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  let metaPath = typeof args.metaPath === "string" ? args.metaPath.trim().replace(/\\/g, "/") : "";
+  const resultPath = typeof args.path === "string" ? args.path.trim().replace(/\\/g, "/") : "";
+  if (!metaPath && resultPath) {
+    metaPath = /\.meta\.json$/i.test(resultPath)
+      ? resultPath
+      : resultPath.replace(/\.json$/i, ".meta.json");
+  }
+  if (!metaPath) throw new Error("请提供 metaPath，或提供 path（将自动推导 .meta.json）");
+
+  const metadata = readToolResultMeta(ctx.config, metaPath);
+  if (!metadata) throw new Error(`meta 不存在或无法解析: ${metaPath}`);
+  return {
+    metaPath,
+    metadata,
+    hint: "不含正文。按 metadata.recommendedRead / hitOffsets 用 read_file 分段取原文。",
+  };
+}
+
 /**
  * 归档当前会话并开启同 Agent 新会话；总结写入 data/sessions/ 与新会话首条消息。
  * 双向血缘：旧.rotatedToSessionId ↔ 新.rotatedFromSessionId。
@@ -1598,6 +1662,31 @@ const SESSION_DEFS: NativeToolDefinition[] = [
     ),
   },
   {
+    name: "tool_results_list",
+    concurrencyClass: "B",
+    description:
+      "列出本会话已落盘的工具结果索引（data/tool-results/{session}/index.jsonl）。返回 toolCallId/path/metaPath/keywords/contentType 等，不含正文。超阈值压缩后上下文只有 metadata 时，用本工具找回历史工具结果卡片，再用 read_file / tool_result_meta 深挖。",
+    parameters: zodParams(
+      z.object({
+        keyword: z.string().describe("可选：按 toolName/title/topics/keywords/entities 子串过滤").optional(),
+        toolName: z.string().describe("可选：精确匹配工具名").optional(),
+        limit: z.number().describe("最多返回条数，默认 20，上限 50").optional(),
+      }),
+    ),
+  },
+  {
+    name: "tool_result_meta",
+    concurrencyClass: "B",
+    description:
+      "读取某次工具结果的厚 metadata（.meta.json）。入参 metaPath（推荐）或 path（自动换成 .meta.json）。不含正文；正文用 read_file(path)。",
+    parameters: zodParams(
+      z.object({
+        metaPath: z.string().describe("相对项目根的 .meta.json 路径").optional(),
+        path: z.string().describe("原文 .json 路径（可自动推导 .meta.json）").optional(),
+      }),
+    ),
+  },
+  {
     name: "task_run",
     description: "立即执行一条已注册的后台 Task（如 db:sync）。",
     parameters: zodParams(
@@ -1720,6 +1809,8 @@ const SESSION_HANDLERS: Record<string, NativeToolHandler> = {
   session_context_usage: sessionContextUsageTool,
   session_search: sessionSearchTool,
   session_message_get: sessionMessageGetTool,
+  tool_results_list: toolResultsListTool,
+  tool_result_meta: toolResultMetaTool,
   task_run: taskRunTool,
   todo_write: todoWriteTool,
   todo_read: todoReadTool,

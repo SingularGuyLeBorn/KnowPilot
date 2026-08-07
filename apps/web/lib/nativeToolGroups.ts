@@ -272,4 +272,6 @@ export const NATIVE_LABELS: Record<string, string> = {
   session_context_usage: "会话上下文用量",
   session_search: "检索本会话历史",
   session_message_get: "读取本会话消息",
+  tool_results_list: "列出落盘工具结果",
+  tool_result_meta: "读取工具结果元数据",
 };

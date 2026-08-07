@@ -53,10 +53,17 @@ compact:
   microCompact:
     enabled: true
     toolResultMaxChars: 4000
-  # 工具大结果落盘（学 DeerFlow）：超阈值写 data/tool-results，LLM 只拿路径+预览
+  # 工具结果全量落盘（记录平面）：一律写 data/tool-results/{session}/ + .meta.json + 瘦 index.jsonl
+  # thresholdChars 只控制「超阈值时对 LLM 只注入 metadata+keywords」；retentionDays≤0 不自动清理
   toolResultOffload:
     enabled: true
     thresholdChars: 4000
+    previewChars: 600
+    contextWindow: 400
+    maxOutputChars: 6000
+    chunkStrideChars: 1000
+    chunkEdgeChars: 100
+    retentionDays: 14
   # 同参连续 tool call 熔断（学 DeerFlow LoopDetection）；≥N 次注入阻断消息
   toolLoopStreakLimit: 3
   # memory flush：macro 摘要前静默提取事实写入 Memory（学 OpenClaw）

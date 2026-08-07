@@ -13,6 +13,10 @@ import { recordViolation } from "./constraintEvolution.js";
 import { hasMockNativeTool, executeMockNativeTool } from "./mockNativeTools.js";
 import { getTool, listTools } from "./tools/registry.js";
 import type { NativeToolContext, NativeToolDefinition } from "./tools/native/types.js";
+import {
+  injectExpectPropsIntoParameters,
+  peelExpectControls,
+} from "./keyInfoExtractor.js";
 
 // 域副作用注册（fs/web/shell/swarm/session/memory/integration）
 import { registerNativeDomains } from "./tools/native/index.js";
@@ -68,9 +72,12 @@ export async function executeNativeTool(
 ): Promise<unknown> {
   ensureNativeToolsRegistered();
 
+  // expect_* 是上下文层控制参数，剥掉后再进权限/handler，避免污染业务入参
+  const { cleanArgs } = peelExpectControls(args);
+
   // Swarm 权限硬拦截：检查 agent 是否有权调用此工具
   if (ctx.agentSnapshot?.tier) {
-    const permError = checkToolPermission(name, args, {
+    const permError = checkToolPermission(name, cleanArgs, {
       agentTier: ctx.agentSnapshot.tier,
       agentId: ctx.agentSnapshot.id,
       agentWorkspaceId: ctx.agentSnapshot.workspaceId,
@@ -93,7 +100,7 @@ export async function executeNativeTool(
   // Mock 模式：命中已覆盖的 native 工具则走 Mock 实现，避免真实网络调用
   if (process.env.MOCK_NATIVE_TOOLS === "true") {
     if (hasMockNativeTool(name)) {
-      return executeMockNativeTool(name, args, ctx);
+      return executeMockNativeTool(name, cleanArgs, ctx);
     }
   }
 
@@ -107,7 +114,7 @@ export async function executeNativeTool(
   }
   // P2-03：执行前用 schema 的 required 字段做轻量入参校验，缺必填字段直接返回结构化错误给 LLM 下轮修正，
   // 不进 handler（避免 handler 因字段缺失抛非结构化异常或误用默认值）。
-  const missing = checkRequiredParams(cmd, args);
+  const missing = checkRequiredParams(cmd, cleanArgs);
   if (missing.length > 0) {
     return {
       error: `工具 ${name} 缺少必填参数: ${missing.join(", ")}。请检查参数后重试。`,
@@ -118,12 +125,12 @@ export async function executeNativeTool(
   // D 类工具回滚栈（W6）：本 run 携带 rollbackStack 时，执行前快照、成功后入栈；
   // 执行失败的工具不入栈（未产生副作用，无需补偿）
   const stack = cmd.destructive ? ctx.rollbackStack : undefined;
-  const artifact = stack ? await stack.capture(cmd, args, ctx) : undefined;
+  const artifact = stack ? await stack.capture(cmd, cleanArgs, ctx) : undefined;
   const started = Date.now();
-  const raw = await cmd.execute(args, ctx);
+  const raw = await cmd.execute(cleanArgs, ctx);
   if (stack && artifact) {
     try {
-      await stack.commit(cmd, args, raw, artifact);
+      await stack.commit(cmd, cleanArgs, raw, artifact);
     } catch (commitErr) {
       console.warn(
         `[nativeTools] rollback commit 失败 tool=${name}:`,
@@ -161,7 +168,13 @@ export function buildNativeToolSchemas(allowed: string[] | "all") {
     const s = t.schema();
     return {
       type: "function" as const,
-      function: { name: t.name, description: s.description, parameters: s.parameters },
+      function: {
+        name: t.name,
+        description: s.description,
+        parameters: injectExpectPropsIntoParameters(
+          (s.parameters ?? { type: "object", properties: {} }) as Record<string, unknown>,
+        ),
+      },
     };
   });
 }
